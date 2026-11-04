@@ -1,0 +1,57 @@
+{
+  "name": "pdf-master-desktop",
+  "productName": "FormEasy",
+  "version": "0.1.0",
+  "private": true,
+  "description": "FormEasy desktop app (offline)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:web": "npm --prefix ../web run build",
+    "build:server": "node build-server.js",
+    "dist": "npm run build:web && npm run build:server && electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "com.pdfmaster.desktop",
+    "productName": "FormEasy",
+    "files": [
+      "main.js",
+      "preload.js",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../backend/dist/pdfmaster-server",
+        "to": "server"
+      },
+      {
+        "from": "../backend/dist/tesseract",
+        "to": "tesseract"
+      },
+      {
+        "from": "../web/dist",
+        "to": "web"
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "pdf",
+        "name": "PDF Document",
+        "role": "Editor"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

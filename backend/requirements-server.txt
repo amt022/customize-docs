@@ -1,0 +1,6 @@
+# Hosted website only (not needed for the desktop build): pip install -r requirements.txt -r requirements-server.txt
+boto3==1.43.123
+psycopg[binary,pool]==3.3.7
+# tests of the hosted storage (fake S3, throwaway PostgreSQL)
+moto==5.2.5
+pgserver==0.1.4

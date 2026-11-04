@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pdfmaster",
+      "runtimeExecutable": "C:/ashish/editing/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "pdfmaster.api:app", "--app-dir", "C:/ashish/editing/backend", "--host", "127.0.0.1", "--port", "8000"],
+      "port": 8000
+    }
+  ]
+}
