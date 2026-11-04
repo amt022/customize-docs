@@ -97,10 +97,10 @@ function SignIn({ onClose, onDone }: { onClose: () => void; onDone: (s: SessionI
   const verify = () => run(async () => onDone(await api.verifyCode(phone, code)));
 
   return (
-    <Dialog title="Sign in" onClose={onClose} width={400}>
+    <Dialog title="Sign in or sign up" onClose={onClose} width={400}>
       {sentTo === null ? (
         <form className="signin" onSubmit={(e) => { e.preventDefault(); send(); }}>
-          <p className="muted small">Sign in to keep your documents and open them on any device. We text you a one-time code; no password needed.</p>
+          <p className="muted small">New here? Just enter your number and your account is created automatically. Signed in, your documents are kept and open on any device. We text you a one-time code; no password needed.</p>
           <label>Mobile number
             <input type="tel" inputMode="tel" autoComplete="tel" placeholder="98765 43210" value={phone}
               onChange={(e) => setPhone(e.target.value)} autoFocus required />

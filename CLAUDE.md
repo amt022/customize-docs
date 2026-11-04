@@ -3,7 +3,7 @@
 All-in-one app for government / exam / admission paperwork: hub home, Photo & Signature tool, PDF Studio.
 
 ## Stack and layout
-- `backend/pdfmaster` – Python, FastAPI, pikepdf. `engine/` holds the PDF/scan logic, `service.py` the API layer, `tests/` pytest (87 tests, all passing); `storage.py` (local folder or S3) and `db.py` (SQLite or PostgreSQL) hold the data.
+- `backend/pdfmaster` – Python, FastAPI, pikepdf. `engine/` holds the PDF/scan logic, `service.py` the API layer, `tests/` pytest (89 tests, all passing); `storage.py` (local folder or S3) and `db.py` (SQLite or PostgreSQL) hold the data.
 - `web/` – React + TS + Vite. Build with `npm run build` after changes.
 - `desktop/` – Electron wrapper.
 
@@ -33,6 +33,10 @@ All-in-one app for government / exam / admission paperwork: hub home, Photo & Si
 - Tilt handled by shear only.
 
 ## Change log (newest first; add a line after each task)
+- Scan edit on striped tables (price list, grey row): word box is >50% ink so `_ink_bool` now takes the paper from the strips beside the word (was mid-grey, so strokes came out thin/pale); `inpaint` fills row by row from the same row left/right of the hole first (band edge behind the word stayed smeared as a bluish halo); `ink_mask` only treats lighter-than-paper pixels as shadow when they hug the letters. Test: `test_erase_keeps_a_band_edge_that_runs_behind_the_word`.
+- Scan edit bug (doc.pdf, small price digits drawn as thin bars): `rasterize` now loads glyphs with `FT_LOAD_NO_BITMAP`; Calibri/Arial 1-bit strikes at small sizes were read as 8-bit gray. Test: `test_small_text_is_rasterized_from_outlines_not_1bit_strikes`.
+- Production prep: security headers middleware (hosted only), Dockerfile HEALTHCHECK + WEB_CONCURRENCY, `.dockerignore`, `backend/loadtest.py` (40 users, 0 errors locally). Still needs real SMS, Docker build, real deploy.
+- Sign-in dialog now reads "Sign in or sign up" and says a new number creates the account automatically.
 - Recently deleted: ✕ in Recent documents now sets `documents.deleted_at` (soft delete) and shows an 8 s Undo bar; collapsible "Recently deleted" list on PDF Studio with Restore and Delete forever (confirm dialog). API `GET /trash`, `POST /trash/{id}/restore`, `DELETE /trash/{id}`; trash erased after `PDFMASTER_TRASH_DAYS` (default 30, 0 = never) by the sweep thread, which now always runs. Tests: `test_delete_goes_to_trash_and_can_be_restored`, `test_trash_is_emptied_after_days`.
 - Docs: `docs/DEPLOYMENT.md` (status table, OTP provider setup, server settings, next steps); README storage / layout / API / testing sections brought up to date; CLAUDE.md mode + launch-config notes.
 - Accounts: optional mobile-number OTP sign-in (`auth.py`; users/sessions/otp_codes tables, keyed hashes, 30 s resend, 5 sends/h, 5 guesses counted atomically before compare); sign-in moves the browser's documents to owner `u:<id>`, new cookie value; sign-out, delete account (erases documents). `PDFMASTER_SMS` msg91/twilio/console, `PDFMASTER_ACCOUNT_RETENTION_DAYS`. Start-up refuses S3/Postgres without MULTIUSER, hosted mode without SMS, and `python -m pdfmaster` on a network host. UI: header Account menu + sign-in dialog, keep-note under the drop zone, real upload limit; Dialog now renders through a portal (blurred header trapped it). Local hosted test server: `run_hosted.py` / launch `pdfmaster-hosted` (port 8001). Test: `test_auth.py`.

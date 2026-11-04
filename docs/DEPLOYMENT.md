@@ -15,7 +15,8 @@ public website where many people use one server.
 | Start-up safety checks | Done, tested |
 | Real SMS sending (MSG91 / Twilio) | Code written, **not yet tried with a real account** |
 | Docker image (`backend/Dockerfile`) | Written, **never built** (no Docker on the dev machine) |
-| Load testing | **Not done.** Rough estimate: 20–40 people editing at once per 2-core server, 2 OCR jobs at a time per process |
+| Security headers (nosniff, no framing, HSTS over https), Docker HEALTHCHECK, `.dockerignore` | Done |
+| Load testing | Light test done on a dev PC (`backend/loadtest.py`: 40 people uploading and rendering at once, 0 errors, renders under 0.5 s). OCR-heavy and real-server (S3 + PostgreSQL) load not tested. Estimate: 20–40 people editing at once per 2-core server, 2 OCR jobs at a time per process |
 
 Next steps, in order: SMS provider (below) → build the Docker image → database + bucket → deploy behind HTTPS →
 load test.
@@ -141,5 +142,5 @@ The server refuses to start if PostgreSQL / S3 is set without `PDFMASTER_MULTIUS
 ## 4. Still to do
 
 - Run real SMS once (section 2) and build the Docker image once.
-- Load test (many simulated users uploading, rendering, editing) to replace the estimate above.
+- Re-run `python loadtest.py https://your-site 40` against the real deployment (S3 + PostgreSQL) before launch.
 - Optional: Google sign-in; moving OCR to a separate job queue so long OCR jobs do not slow editing.

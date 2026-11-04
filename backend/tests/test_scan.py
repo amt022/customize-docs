@@ -201,3 +201,27 @@ def test_ocr_reports_missing_engine(scanned_doc, monkeypatch):
     monkeypatch.setattr(ocr, "tesseract_path", lambda: None)
     r = client.post(f"/api/v1/documents/{did}/ocr", json={})
     assert r.status_code == 503 and r.json()["ocrUnavailable"]
+
+
+def test_small_text_is_rasterized_from_outlines_not_1bit_strikes():
+    # Calibri / Arial carry 1-bit bitmap strikes at small sizes; reading one as 8-bit gray turned digits into thin bars
+    from pdfmaster.engine.scanedit import pick_font, rasterize
+
+    r = rasterize("1999", pick_font("1999", "sans", True, False), 16.7)
+    a = r.alpha[r.ink[0]:r.ink[2], r.ink[1]:r.ink[3]]
+    assert a.sum() > 100  # four bold digits ~11 px tall; the broken read gave about 27
+
+
+def test_erase_keeps_a_band_edge_that_runs_behind_the_word():
+    # a word sitting on the bottom edge of a grey table stripe: the fill must not smear grey into the cream below
+    import numpy as np
+
+    from pdfmaster.engine.scanedit import inpaint
+
+    arr = np.zeros((30, 60, 3), np.float32)
+    arr[:15] = 210
+    arr[15:] = 252
+    mask = np.zeros((30, 60), bool)
+    mask[8:22, 15:45] = True
+    out = inpaint(arr, mask)
+    assert np.abs(out - arr).max() < 3

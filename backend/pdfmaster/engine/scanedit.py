@@ -72,7 +72,7 @@ def rasterize(text: str, font: SysFont, px: float) -> Raster:
     canvas = np.zeros((height, width), np.float32)
     pen = float(pad)
     for info, pos in zip(buf.glyph_infos, buf.glyph_positions):
-        face.load_glyph(info.codepoint, freetype.FT_LOAD_DEFAULT | freetype.FT_LOAD_NO_HINTING)
+        face.load_glyph(info.codepoint, freetype.FT_LOAD_DEFAULT | freetype.FT_LOAD_NO_HINTING | freetype.FT_LOAD_NO_BITMAP)  # no 1-bit strikes at small sizes
         face.glyph.render(freetype.FT_RENDER_MODE_NORMAL)
         bm = face.glyph.bitmap
         if bm.width and bm.rows:
@@ -128,6 +128,24 @@ def inpaint(arr: np.ndarray, mask: np.ndarray, exclude: Optional[np.ndarray] = N
     out = arr.astype(np.float32).copy()
     known = (~mask if exclude is None else ~mask & ~exclude).astype(np.float32)
     todo = mask.copy()
+    # first, row by row: a band edge (table stripe, banner border) running behind the word stays sharp when each row
+    # is filled from the same row just left and right of the hole, instead of blurring the two sides together
+    D = 6
+    for y in np.nonzero(mask.any(axis=1))[0]:
+        row = mask[y].astype(np.int8)
+        edges = np.diff(np.concatenate([[0], row, [0]]))
+        for a, b in zip(np.nonzero(edges == 1)[0], np.nonzero(edges == -1)[0]):
+            left = out[y, max(a - D, 0):a][known[y, max(a - D, 0):a] > 0]
+            right = out[y, b:b + D][known[y, b:b + D] > 0]
+            if len(left) < 2 or len(right) < 2:
+                continue
+            lc, rc = np.median(left, axis=0), np.median(right, axis=0)
+            if np.linalg.norm(np.atleast_1d(lc - rc)) > 18:  # the two sides differ: not a flat band, use the blur below
+                continue
+            t = ((np.arange(a, b) - a + 0.5) / (b - a))[:, None] if out.ndim == 3 else ((np.arange(a, b) - a + 0.5) / (b - a))
+            out[y, a:b] = lc + (rc - lc) * t
+            todo[y, a:b] = False
+            known[y, a:b] = 1.0
     w3 = known[..., None] if out.ndim == 3 else known
     r = 2
     while todo.any() and r < max(mask.shape):
@@ -205,7 +223,12 @@ def ink_mask(arr: np.ndarray, paper: np.ndarray, ink: np.ndarray, window: tuple,
     t = np.linalg.norm(a3 - paper, axis=-1) / dist  # 0 = paper colour, 1 = ink colour, in any direction
     cand = np.zeros(t.shape, bool)
     wy0, wx0, wy1, wx1 = window
-    cand[wy0:wy1, wx0:wx1] = t[wy0:wy1, wx0:wx1] > thr
+    # lighter-than-paper pixels (the white gap between table rows) are only part of the word as a shadow / glow,
+    # which hugs the letters; further away they are another background and must not be erased
+    proj = ((a3 - paper) @ axis) / max(dist * dist, 1e-6)
+    inkward = (t > thr) & (proj > 0.1)
+    near = _dilate(inkward, max(int(0.2 * (seed[2] - seed[0])), 2))
+    cand[wy0:wy1, wx0:wx1] = ((t > thr) & ((proj > -0.02) | near))[wy0:wy1, wx0:wx1]
     # other words: growth must not walk into them through touching shadows or glow (but they stay in cand,
     # so the fill never borrows their colour)
     free = cand & ~block if block is not None else cand
@@ -221,10 +244,11 @@ def ink_mask(arr: np.ndarray, paper: np.ndarray, ink: np.ndarray, window: tuple,
 
 
 # ------------------------------------------------------------------ reading the scan: tilt and typeface
-def _ink_bool(arr: np.ndarray) -> np.ndarray:
-    """Which pixels of a crop are text: whatever differs from the crop's dominant colour."""
+def _ink_bool(arr: np.ndarray, paper: Optional[np.ndarray] = None) -> np.ndarray:
+    """Which pixels of a crop are text: whatever differs from the crop's dominant colour (or from `paper`, when the
+    caller knows it: a tight box around bold text is mostly ink, so its median is not the paper)."""
     a3 = arr if arr.ndim == 3 else arr[..., None]
-    paper = np.median(a3.reshape(-1, a3.shape[2]), axis=0)
+    paper = np.median(a3.reshape(-1, a3.shape[2]), axis=0) if paper is None else np.atleast_1d(paper)
     dd = np.linalg.norm(a3 - paper, axis=-1)
     top = float(np.percentile(dd, 99)) if dd.size else 0.0
     if top < 30:
@@ -517,7 +541,15 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
 
     # typeface, size, width and baseline from how the *original* text sits in its box
     wc = crop(oc0, or0, oc1, or1)
-    word_mask = unshear(_ink_bool(wc), tilt) if wc is not None else None
+    side_paper = None
+    if wc is not None:
+        r0_, r1_ = int(max(or0, 0)), int(min(or1, H))
+        c0_, c1_ = int(max(oc0, 0)), int(min(oc1, W))
+        beside = [full[r0_:r1_, max(c0_ - 5, 0):c0_], full[r0_:r1_, c1_:min(c1_ + 5, W)]]
+        beside = [b.reshape(-1, b.shape[-1]) if b.ndim == 3 else b.reshape(-1, 1) for b in beside if b.size]
+        if beside and sum(len(b) for b in beside) >= 12:
+            side_paper = np.median(np.concatenate(beside), axis=0)
+    word_mask = unshear(_ink_bool(wc, side_paper), tilt) if wc is not None else None
     tight = _tight(word_mask) if word_mask is not None else None
     if tight is not None and 0.5 * hpx <= tight.shape[0] <= hpx:  # the ink's own height beats the OCR box's slack
         hpx_c = float(tight.shape[0])

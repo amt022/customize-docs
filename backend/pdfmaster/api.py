@@ -95,6 +95,19 @@ async def _local_token(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    response = await call_next(request)
+    if MULTIUSER:
+        h = response.headers
+        h.setdefault("X-Content-Type-Options", "nosniff")
+        h.setdefault("X-Frame-Options", "DENY")
+        h.setdefault("Referrer-Policy", "same-origin")
+        if COOKIE_SECURE:
+            h.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
+
+
 def _valid_sid(sid: str) -> bool:
     return len(sid) == 43 and sid.replace("-", "").replace("_", "").isalnum()
 

@@ -1,0 +1,11 @@
+backend/.venv
+backend/data
+backend/data-hosted
+backend/build
+backend/dist
+backend/tests
+web/node_modules
+web/dist
+desktop
+.git
+**/__pycache__
