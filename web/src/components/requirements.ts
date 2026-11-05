@@ -6,14 +6,38 @@ export interface Req {
   w: number; h: number; unit: "px" | "mm"; dpi: number;
   minKB: number; maxKB: number;
   format: Fmt;
+  group?: string;     // exam / portal, for the preset list
+  note?: string;      // extra rule shown when the preset is chosen
+  nameDate?: boolean; // name and date of the photograph must be printed under the face
 }
 
-// Examples only: every exam sets its own limits, so these must be checked against the official notification.
+// Commonly published limits. Every exam can change them in a new notification, so the UI
+// always asks the user to check the official one.
+const P = (group: string, name: string, r: Omit<Req, "name" | "group">): Req => ({ group, name: `${group}: ${name}`, ...r });
 export const TEMPLATES: Req[] = [
-  { name: "Photograph (example)", w: 200, h: 230, unit: "px", dpi: 300, minKB: 20, maxKB: 50, format: "jpeg" },
-  { name: "Passport photo 35×45 mm (example)", w: 35, h: 45, unit: "mm", dpi: 300, minKB: 20, maxKB: 100, format: "jpeg" },
-  { name: "Signature (example)", w: 140, h: 60, unit: "px", dpi: 300, minKB: 10, maxKB: 20, format: "jpeg" },
+  P("SSC (CGL, CHSL, MTS, GD)", "Photo", { w: 35, h: 45, unit: "mm", dpi: 200, minKB: 20, maxKB: 50, format: "jpeg",
+    note: "Recent photo, plain light background, no cap or glasses." }),
+  P("SSC (CGL, CHSL, MTS, GD)", "Signature", { w: 40, h: 20, unit: "mm", dpi: 200, minKB: 10, maxKB: 20, format: "jpeg" }),
+  P("UPSC (CSE, NDA, CDS)", "Photo", { w: 350, h: 350, unit: "px", dpi: 300, minKB: 20, maxKB: 300, format: "jpeg", nameDate: true,
+    note: "Your name and the date the photo was taken must be printed below the face." }),
+  P("UPSC (CSE, NDA, CDS)", "Signature", { w: 350, h: 350, unit: "px", dpi: 300, minKB: 20, maxKB: 300, format: "jpeg" }),
+  P("IBPS / SBI / RBI (bank exams)", "Photo", { w: 200, h: 230, unit: "px", dpi: 200, minKB: 20, maxKB: 50, format: "jpeg" }),
+  P("IBPS / SBI / RBI (bank exams)", "Signature", { w: 140, h: 60, unit: "px", dpi: 200, minKB: 10, maxKB: 20, format: "jpeg",
+    note: "Black ink on white paper; capital letters are not accepted." }),
+  P("IBPS / SBI / RBI (bank exams)", "Left thumb impression", { w: 240, h: 240, unit: "px", dpi: 200, minKB: 20, maxKB: 50, format: "jpeg" }),
+  P("IBPS / SBI / RBI (bank exams)", "Handwritten declaration", { w: 800, h: 400, unit: "px", dpi: 200, minKB: 50, maxKB: 100, format: "jpeg" }),
+  P("NTA (NEET, JEE Main, CUET)", "Passport photo", { w: 35, h: 45, unit: "mm", dpi: 200, minKB: 10, maxKB: 200, format: "jpeg", nameDate: true,
+    note: "80% face, white background; name and date of the photo below the face." }),
+  P("NTA (NEET, JEE Main, CUET)", "Signature", { w: 50, h: 20, unit: "mm", dpi: 200, minKB: 4, maxKB: 30, format: "jpeg" }),
+  P("Railways (RRB NTPC, Group D)", "Photo", { w: 35, h: 45, unit: "mm", dpi: 200, minKB: 30, maxKB: 70, format: "jpeg" }),
+  P("Railways (RRB NTPC, Group D)", "Signature", { w: 50, h: 20, unit: "mm", dpi: 200, minKB: 30, maxKB: 70, format: "jpeg" }),
+  P("PAN card (NSDL / UTIITSL)", "Photo", { w: 25, h: 35, unit: "mm", dpi: 200, minKB: 0, maxKB: 50, format: "jpeg" }),
+  P("PAN card (NSDL / UTIITSL)", "Signature", { w: 45, h: 20, unit: "mm", dpi: 200, minKB: 0, maxKB: 50, format: "jpeg" }),
+  P("General", "Passport photo 35×45 mm", { w: 35, h: 45, unit: "mm", dpi: 300, minKB: 20, maxKB: 100, format: "jpeg" }),
+  P("General", "Photo 200×230 px", { w: 200, h: 230, unit: "px", dpi: 300, minKB: 20, maxKB: 50, format: "jpeg" }),
+  P("General", "Signature 140×60 px", { w: 140, h: 60, unit: "px", dpi: 300, minKB: 10, maxKB: 20, format: "jpeg" }),
 ];
+export const GROUPS = [...new Set(TEMPLATES.map((t) => t.group!))];
 export const STORE = "applysetu.requirements";
 
 export interface Check { ok: boolean; label: string; detail: string }

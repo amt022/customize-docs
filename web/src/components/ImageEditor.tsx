@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { jpegToDocx, jpegToPdf } from "../wrap";
-import { STORE, TEMPLATES, check, padJpeg, pixels, type Check, type Req } from "./requirements";
+import { GROUPS, STORE, TEMPLATES, check, padJpeg, pixels, type Check, type Req } from "./requirements";
 
 type Mask = "none" | "rounded" | "circle";
 type Corner = "nw" | "ne" | "se" | "sw";
@@ -20,7 +20,9 @@ interface Layer {
   locked: boolean;
 }
 
-interface Art { w: number; h: number; bg: string }
+/** Name and date printed in a white band at the bottom (UPSC, NTA photos). size: band height in % of the picture. */
+interface Stamp { name: string; date: string; size: number }
+interface Art { w: number; h: number; bg: string; stamp?: Stamp }
 type Format = "png" | "jpeg" | "webp" | "pdf" | "docx";
 
 let nextId = 1;
@@ -117,7 +119,32 @@ function render(canvas: HTMLCanvasElement, layers: Layer[], art: Art, scale = 1)
     ctx.fillRect(0, 0, art.w, art.h);
   }
   layers.forEach((l) => drawLayer(ctx, l));
+  if (art.stamp) drawStamp(ctx, art.w, art.h, art.stamp);
 }
+
+function drawStamp(ctx: CanvasRenderingContext2D, w: number, h: number, st: Stamp) {
+  const lines = [st.name.trim(), st.date.trim()].filter(Boolean);
+  const band = Math.round((h * st.size) / 100);
+  ctx.save();
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, h - band, w, band);
+  ctx.fillStyle = "#000000";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const n = Math.max(lines.length, 1);
+  for (let i = 0; i < lines.length; i++) {
+    // as large as fits the band height and the picture width
+    let size = (band / n) * 0.72;
+    ctx.font = `bold ${size}px Arial, Helvetica, sans-serif`;
+    const tw = ctx.measureText(lines[i]).width;
+    if (tw > w * 0.94) { size *= (w * 0.94) / tw; ctx.font = `bold ${size}px Arial, Helvetica, sans-serif`; }
+    ctx.fillText(lines[i], w / 2, h - band + (band / n) * (i + 0.5));
+  }
+  ctx.restore();
+}
+
+const today = () => { const d = new Date(); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()}`; };
+const STAMP_NAME = "formeasy.stampName";
 
 function sharpen(src: HTMLCanvasElement, amount: number): HTMLCanvasElement {
   const { width: w, height: h } = src;
@@ -267,7 +294,11 @@ export default function ImageEditor() {
         setMsg((e as Error).message);
       }
     }
-    if (last !== null) { change(list, a); setSel(last); }
+    if (last === null) return;
+    setSel(last);
+    // an exam chosen before the first picture: shape the picture to it straight away
+    if (reqOn && layers.length === 0) applyReq(req, req.nameDate ? (a.stamp ?? newStamp()) : a.stamp, list, a);
+    else change(list, a);
   };
 
   const replace = async (file: File) => {
@@ -346,18 +377,39 @@ export default function ImageEditor() {
     try { localStorage.setItem(STORE, JSON.stringify(list)); } catch { /* storage unavailable */ }
   };
   // make the canvas, format and file-size target match what the application asks for
-  const applyReq = (r: Req) => {
+  const applyReq = (r: Req, stamp: Stamp | undefined = art.stamp, base = layers, baseArt = art) => {
     const [w, h] = pixels(r);
-    const target = layers.length === 1 ? layers[0].id : sel;
-    const next = layers.map((l) => {
-      if (l.id !== target) return l;
-      const k = presetFit === "fill" ? Math.max(w / l.w, h / l.h) : Math.min(w / l.w, h / l.h);
-      return { ...l, w: l.w * k, h: l.h * k, cx: w / 2, cy: h / 2 };
-    });
-    change(next, { ...art, w, h, bg: art.bg === "transparent" ? "#ffffff" : art.bg });
+    const next = fitAbove(base, w, h, stamp);
+    change(next, { ...baseArt, w, h, bg: baseArt.bg === "transparent" ? "#ffffff" : baseArt.bg, stamp });
     setOutScale(100);
     setFormat(r.format);
     if (r.maxKB) { setSizeMode("target"); setTargetUnit("KB"); setTargetVal(r.maxKB); } else setSizeMode("quality");
+  };
+  const newStamp = (): Stamp => {
+    let name = "";
+    try { name = localStorage.getItem(STAMP_NAME) ?? ""; } catch { /* storage unavailable */ }
+    return { name, date: today(), size: 18 };
+  };
+  // the main picture fills the area above the name/date band, so the band never covers the chin
+  const fitAbove = (ls: Layer[], w: number, h: number, stamp: Stamp | undefined) => {
+    const target = ls.length === 1 ? ls[0].id : sel;
+    const top = stamp ? h * (1 - stamp.size / 100) : h;
+    return ls.map((l) => {
+      if (l.id !== target) return l;
+      const k = presetFit === "fill" ? Math.max(w / l.w, top / l.h) : Math.min(w / l.w, top / l.h);
+      return { ...l, w: l.w * k, h: l.h * k, cx: w / 2, cy: top / 2 };
+    });
+  };
+  const toggleStamp = (on: boolean) => {
+    const stamp = on ? (art.stamp ?? newStamp()) : undefined;
+    change(fitAbove(layers, art.w, art.h, stamp), { ...art, stamp });
+  };
+  const editStamp = (p: Partial<Stamp>) => {
+    if (!art.stamp) return;
+    const stamp = { ...art.stamp, ...p };
+    if (p.name !== undefined) { try { localStorage.setItem(STAMP_NAME, p.name); } catch { /* storage unavailable */ } }
+    if (p.size !== undefined) change(fitAbove(layers, art.w, art.h, stamp), { ...art, stamp });
+    else setArt({ ...art, stamp });
   };
   const updateReq = (patch: Partial<Req>) => {
     const r = { ...req, ...patch };
@@ -673,12 +725,18 @@ export default function ImageEditor() {
           <details open className="ie-req">
             <summary>Application requirements</summary>
             <label className="check-row"><input type="checkbox" checked={reqOn} onChange={(e) => { setReqOn(e.target.checked); if (e.target.checked) applyReq(req); }} /> Make my picture meet these limits</label>
-            <select aria-label="Requirement" value="" onChange={(e) => { const r = [...TEMPLATES, ...saved].find((x) => x.name === e.target.value); if (r) { setReq({ ...r }); if (reqOn) applyReq(r); } }}>
-              <option value="" disabled>Load a saved requirement…</option>
-              {TEMPLATES.map((t) => <option key={t.name}>{t.name}</option>)}
-              {saved.map((t) => <option key={t.name}>{t.name}</option>)}
+            <select aria-label="Requirement" value="" onChange={(e) => { const r = [...TEMPLATES, ...saved].find((x) => x.name === e.target.value); if (r) { setReq({ ...r }); setReqOn(true); if (layers.length) applyReq(r, r.nameDate ? (art.stamp ?? newStamp()) : art.stamp); } }}>
+              <option value="" disabled>Choose exam or document…</option>
+              {GROUPS.map((g) => (
+                <optgroup key={g} label={g}>
+                  {TEMPLATES.filter((t) => t.group === g).map((t) => <option key={t.name} value={t.name}>{t.name.slice(g.length + 2)}</option>)}
+                </optgroup>
+              ))}
+              {saved.length > 0 && <optgroup label="Saved by you">{saved.map((t) => <option key={t.name}>{t.name}</option>)}</optgroup>}
             </select>
-            <p className="muted small">Examples are only examples: copy the exact limits from your application's notification.</p>
+            <p className="ie-req-name small"><b>{req.name}</b></p>
+            {req.note && <p className="small">{req.note}</p>}
+            <p className="muted small">Limits can change every year: check them against your exam's official notification.</p>
             <div className="ie-grid">
               {reqField("Width", req.w, "w", req.unit === "mm" ? 0.5 : 1)}
               {reqField("Height", req.h, "h", req.unit === "mm" ? 0.5 : 1)}
@@ -704,6 +762,19 @@ export default function ImageEditor() {
                 {reqRes.padded && <p className="muted small">Smaller than the minimum, so empty metadata was added to reach it. The picture itself is unchanged.</p>}
                 {!reqRes.reached && <p className="muted small" style={{ color: "#d33" }}>Cannot get under {req.maxKB} KB at {pixels(req).join("×")} px. Check the limits or the format.</p>}
               </>
+            )}
+          </details>
+          <details open={!!art.stamp} className="ie-stamp">
+            <summary>Name and date on photo</summary>
+            <label className="check-row"><input type="checkbox" checked={!!art.stamp} onChange={(e) => toggleStamp(e.target.checked)} /> Print name and date below the face</label>
+            {art.stamp && (
+              <div className="form-grid">
+                <label>Name<input value={art.stamp.name} placeholder="Your name" onChange={(e) => editStamp({ name: e.target.value.toUpperCase() })} /></label>
+                <label>Date of photo<input value={art.stamp.date} placeholder="DD/MM/YYYY" onChange={(e) => editStamp({ date: e.target.value })} /></label>
+                <label className="ie-slider"><span>Band height</span>
+                  <input type="range" min={10} max={30} value={art.stamp.size} onChange={(e) => editStamp({ size: num(e.target.value, 18) })} /><output>{art.stamp.size}%</output></label>
+                <span className="muted small">Use the date the photo was actually taken.</span>
+              </div>
             )}
           </details>
           <h3>Layers</h3>
