@@ -433,3 +433,8 @@ button.hub-card:hover { border-color: var(--accent, #3b6cf6); box-shadow: 0 2px 
 .hub-card.soon { opacity: .6; cursor: default; }
 .hub-icon { font-size: 26px; }
 .soon-tag { font-size: 11px; font-weight: 500; background: #eef0f4; border-radius: 6px; padding: 2px 6px; margin-left: 4px; }
+
+/* download format picker */
+.format-options { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px 10px; margin: 0 0 12px; display: grid; gap: 6px; }
+.format-options legend { font-size: 12px; font-weight: 600; padding: 0 4px; }
+.format-row { display: flex; flex-wrap: wrap; gap: 6px; }

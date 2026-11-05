@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal, Optional
 from urllib.parse import quote
 
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -640,6 +640,15 @@ def export(doc_id: str, body: ExportIn):
     return Response(data, media_type="application/pdf",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}",
                              "X-Original-Size": str(stats["originalSize"]), "X-Compressed-Size": str(stats["size"])})
+
+
+@app.get(f"{API}/documents/{{doc_id}}/convert")
+def convert(doc_id: str, format: Literal["jpg", "png", "docx", "xlsx", "txt"], pages: str = Query("", max_length=200), dpi: int = 150):
+    data, name, mime, info = service.convert(doc_id, format, pages, dpi)
+    return Response(data, media_type=mime,
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}",
+                             "X-Pages-Without-Text": ",".join(map(str, info["noText"])),
+                             "Access-Control-Expose-Headers": "Content-Disposition, X-Pages-Without-Text"})
 
 
 @app.get(f"{API}/documents/{{doc_id}}/compare/{{page}}.png")

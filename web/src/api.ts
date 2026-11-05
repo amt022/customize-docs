@@ -112,6 +112,19 @@ export const api = {
     };
   },
 
+  convert: async (id: string, format: ConvertFormat, pages: string, dpi: number) => {
+    const q = new URLSearchParams({ format, pages, dpi: String(dpi) });
+    const res = await fetch(`${BASE}/documents/${id}/convert?${q}`);
+    if (!res.ok) {
+      const b = await res.json().catch(() => null);
+      throw new ApiError(b?.message ?? `Download failed (${res.status})`, res.status, b);
+    }
+    const cd = res.headers.get("content-disposition") ?? "";
+    const m = /filename\*=UTF-8''([^;]+)/.exec(cd);
+    const noText = (res.headers.get("x-pages-without-text") ?? "").split(",").filter(Boolean).map(Number);
+    return { blob: await res.blob(), name: m ? decodeURIComponent(m[1]) : `document.${format}`, noText };
+  },
+
   // annotations
   annotations: (id: string, page: number) => call<AnnotationInfo[]>(`/documents/${id}/pages/${page}/annotations`),
   annotate: (id: string, body: Record<string, unknown> & { page: number; type: string; baseVersion: number }) =>
@@ -160,6 +173,8 @@ export interface JobInfo {
   error: string | null;
   result: { pages: number[] } | null;
 }
+
+export type ConvertFormat = "jpg" | "png" | "docx" | "xlsx" | "txt";
 
 export function saveBlob(blob: Blob, name: string) {
   const url = URL.createObjectURL(blob);

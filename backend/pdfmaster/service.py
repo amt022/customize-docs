@@ -642,6 +642,38 @@ class DocumentService:
         result = compress(self.data(doc_id), compression)
         return protect(result.data, protection), result.stats()
 
+    def convert(self, doc_id: str, fmt: str, pages: str = "", dpi: int = 150) -> tuple[bytes, str, str, dict]:
+        """Download as JPG/PNG (one image, or a zip for several pages), Word, Excel or text.
+        Returns (data, file name, media type, info) where info lists pages that had no text."""
+        from .engine import convert as C
+
+        if fmt not in C.FORMATS:
+            raise EditError(f"Unknown format {fmt}")
+        doc = self.get(doc_id)
+        data = self.data(doc_id)
+        pages0 = page_ops.parse_ranges(pages, doc["page_count"]) if pages.strip() else list(range(doc["page_count"]))
+        if not pages0:
+            raise EditError("No pages selected")
+        stem = doc["original_name"][:-4] if doc["original_name"].lower().endswith(".pdf") else doc["original_name"]
+        if doc["current_version"]:
+            stem += "-edited"
+        if fmt in ("jpg", "png"):
+            out, name, mime = C.images(data, pages0, fmt, max(50, min(int(dpi), 600)), stem)
+            return out, name, mime, {"noText": []}
+        models = [self.page_model(doc_id, p + 1) for p in pages0]
+        no_text = [p + 1 for p, m in zip(pages0, models) if not C.rows(m)]
+        if fmt == "txt":
+            out = C.text(models)
+        elif fmt == "xlsx":
+            out = C.xlsx(models, [p + 1 for p in pages0])
+        else:
+            def page_png(i: int) -> tuple[bytes, int, int]:
+                from .engine.render import render_array, array_to_png
+                arr = render_array(data, i, 150 / 72)
+                return array_to_png(arr), arr.shape[1], arr.shape[0]
+            out = C.docx(models, page_png, pages0)
+        return out, f"{stem}.{fmt}", C.MIME[fmt], {"noText": no_text}
+
     def compression_options(self, doc_id: str) -> dict:
         """Download size at every compression level, so the user can choose."""
         from .engine.compress import compress

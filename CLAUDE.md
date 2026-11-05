@@ -3,7 +3,7 @@
 All-in-one app for government / exam / admission paperwork: hub home, Photo & Signature tool, PDF Studio.
 
 ## Stack and layout
-- `backend/pdfmaster` – Python, FastAPI, pikepdf. `engine/` holds the PDF/scan logic, `service.py` the API layer, `tests/` pytest (89 tests, all passing); `storage.py` (local folder or S3) and `db.py` (SQLite or PostgreSQL) hold the data.
+- `backend/pdfmaster` – Python, FastAPI, pikepdf. `engine/` holds the PDF/scan logic, `service.py` the API layer, `tests/` pytest (93 tests, all passing); `storage.py` (local folder or S3) and `db.py` (SQLite or PostgreSQL) hold the data.
 - `web/` – React + TS + Vite. Build with `npm run build` after changes.
 - `desktop/` – Electron wrapper.
 
@@ -33,6 +33,7 @@ All-in-one app for government / exam / admission paperwork: hub home, Photo & Si
 - Tilt handled by shear only.
 
 ## Change log (newest first; add a line after each task)
+- Download in other formats: Download dialog now has a Format picker (PDF, JPG, PNG, Word, Excel, Text) with page range and image quality (100/150/300 dpi). `GET /documents/{id}/convert?format=&pages=&dpi=` (`engine/convert.py`, `service.convert`); several pages of JPG/PNG come as a .zip; Word/Excel written as raw Office XML (no new deps); Excel finds columns from merged cell spans (right-aligned amounts line up) and stores amounts (also ₹/Rs prefixed) as numbers; un-OCR'd scan pages go into Word as pictures (`X-Pages-Without-Text` header, UI warns). Tests: `test_convert.py`.
 - Scan edit on striped tables (price list, grey row): word box is >50% ink so `_ink_bool` now takes the paper from the strips beside the word (was mid-grey, so strokes came out thin/pale); `inpaint` fills row by row from the same row left/right of the hole first (band edge behind the word stayed smeared as a bluish halo); `ink_mask` only treats lighter-than-paper pixels as shadow when they hug the letters. Test: `test_erase_keeps_a_band_edge_that_runs_behind_the_word`.
 - Scan edit bug (doc.pdf, small price digits drawn as thin bars): `rasterize` now loads glyphs with `FT_LOAD_NO_BITMAP`; Calibri/Arial 1-bit strikes at small sizes were read as 8-bit gray. Test: `test_small_text_is_rasterized_from_outlines_not_1bit_strikes`.
 - Production prep: security headers middleware (hosted only), Dockerfile HEALTHCHECK + WEB_CONCURRENCY, `.dockerignore`, `backend/loadtest.py` (40 users, 0 errors locally). Still needs real SMS, Docker build, real deploy.

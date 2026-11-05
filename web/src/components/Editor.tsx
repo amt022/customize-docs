@@ -557,7 +557,16 @@ export default function Editor({ id, startTool = "edit", onClose }: { id: string
       </footer>
 
       {modal === "export" && (
-        <ExportDialog docId={id} wasEncrypted={!!doc.was_encrypted} isSigned={!!doc.is_signed} onClose={() => setModal(null)} onExport={async (o) => {
+        <ExportDialog docId={id} pageCount={doc.page_count} isScan={model?.type === "scanned" && !isScan} onConvert={async (format, pages, dpi) => {
+          setModal(null);
+          try {
+            const { blob, name, noText } = await api.convert(id, format, pages, dpi);
+            saveBlob(blob, name);
+            if (noText.length) notify("err", `Page${noText.length > 1 ? "s" : ""} ${noText.join(", ")} had no readable text${format === "docx" ? " and went in as pictures" : ""}. Run Read text (OCR) first to get their text.`);
+          } catch (e: any) {
+            notify("err", e.message);
+          }
+        }} wasEncrypted={!!doc.was_encrypted} isSigned={!!doc.is_signed} onClose={() => setModal(null)} onExport={async (o) => {
           setModal(null);
           try {
             const { blob, name, originalSize, size } = await api.exportPdf(id, o);
