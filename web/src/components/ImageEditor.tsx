@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { jpegToDocx, jpegToPdf } from "../wrap";
 import { STORE, TEMPLATES, check, padJpeg, pixels, type Check, type Req } from "./requirements";
 
 type Mask = "none" | "rounded" | "circle";
@@ -20,7 +21,7 @@ interface Layer {
 }
 
 interface Art { w: number; h: number; bg: string }
-type Format = "png" | "jpeg" | "webp";
+type Format = "png" | "jpeg" | "webp" | "pdf" | "docx";
 
 let nextId = 1;
 const MAX_ART = 4000;
@@ -481,13 +482,19 @@ export default function ImageEditor() {
   });
 
   // ------------------------------------------------------------- export
-  const mime = `image/${format}`;
+  // PDF and Word hold the picture as a JPEG
+  const wrapped = format === "pdf" || format === "docx";
+  const mime = wrapped ? "image/jpeg" : `image/${format}`;
   const encode = async (scale: number, q: number) => {
     const c = document.createElement("canvas");
     // JPEG has no transparency: fill with white so transparent areas do not turn black
-    render(c, layers, format === "jpeg" && art.bg === "transparent" ? { ...art, bg: "#ffffff" } : art, scale);
-    const blob: Blob | null = await new Promise((r) => c.toBlob(r, mime, q));
+    render(c, layers, mime === "image/jpeg" && art.bg === "transparent" ? { ...art, bg: "#ffffff" } : art, scale);
+    let blob: Blob | null = await new Promise((r) => c.toBlob(r, mime, q));
     if (!blob) throw new Error("Could not create the image");
+    if (wrapped) {
+      const jpeg = new Uint8Array(await blob.arrayBuffer());
+      blob = format === "pdf" ? jpegToPdf(jpeg, c.width, c.height) : jpegToDocx(jpeg, c.width, c.height);
+    }
     return { blob, width: c.width, height: c.height };
   };
 
@@ -833,6 +840,7 @@ export default function ImageEditor() {
             <div className="ie-row">
               <select value={format} onChange={(e) => setFormat(e.target.value as Format)} aria-label="Format">
                 <option value="png">PNG</option><option value="jpeg">JPG</option><option value="webp">WebP</option>
+                <option value="pdf">PDF</option><option value="docx">Word</option>
               </select>
               <span className="muted small">{Math.round(art.w * outScale / 100)}×{Math.round(art.h * outScale / 100)} px</span>
             </div>
@@ -862,7 +870,7 @@ export default function ImageEditor() {
             <label className="ie-slider"><span>Resolution</span>
               <input type="range" min={10} max={200} value={outScale} onChange={(e) => setOutScale(num(e.target.value))} /><output>{outScale}%</output></label>
             <div className="ie-row">
-              <button className="btn primary" onClick={() => exportImage(true)} disabled={!layers.length || working}>{working ? "Working…" : "⬇ Download image"}</button>
+              <button className="btn primary" onClick={() => exportImage(true)} disabled={!layers.length || working}>{working ? "Working…" : "⬇ Download " + (format === "pdf" ? "PDF" : format === "docx" ? "Word file" : "image")}</button>
               <button className="btn small" onClick={() => exportImage(false)} disabled={!layers.length || working}>Check size</button>
             </div>
             {exported && <p className="muted small">{exported}</p>}
