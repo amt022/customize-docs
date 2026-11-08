@@ -316,7 +316,9 @@ Environment variables (all optional):
 | `PDFMASTER_COOKIE_SECURE` | `0` only for testing hosted mode over plain http |
 | `PDFMASTER_RETENTION_HOURS` | Delete documents of browsers that did not sign in after this many idle hours (default 0 = never) |
 | `PDFMASTER_ACCOUNT_RETENTION_DAYS` | Same for signed-in accounts (default 0 = keep until the user deletes them) |
-| `PDFMASTER_SMS` | How sign-in codes are sent: `msg91`, `twilio`, or `console` (server log, local testing only). Required in hosted mode |
+| `PDFMASTER_EMAIL` | How emailed sign-in codes are sent: `smtp` or `console` (server log, local testing only). Hosted mode needs this and/or `PDFMASTER_SMS` |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | SMTP server for `PDFMASTER_EMAIL=smtp` (port 587 + `starttls` by default; `ssl` uses 465) |
+| `PDFMASTER_SMS` | How texted sign-in codes are sent: `msg91`, `twilio`, or `console`. Optional when email is set |
 | `MSG91_AUTH_KEY`, `MSG91_TEMPLATE_ID` | MSG91: auth key and a DLT-approved OTP template with an `##otp##` variable |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | Twilio SMS |
 | `PDFMASTER_SECRET` | Key for hashing codes and session tokens; must be the same on every server (default: `<data>/secret.key`) |
@@ -326,7 +328,7 @@ Run the engine directly: `python -m pdfmaster --port 8000` (from `backend`).
 
 ### Hosted website
 
-Full guide, including setting up the SMS provider for sign-in codes: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+Full guide, including setting up the email (and optional SMS) provider for sign-in codes: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
 
 The desktop app keeps everything on the user's PC. For a public website, run with:
 
@@ -342,10 +344,10 @@ AWS_ACCESS_KEY_ID=...  AWS_SECRET_ACCESS_KEY=...
 - Install `requirements-server.txt` as well (boto3, psycopg). `backend/Dockerfile` builds an image with the UI,
   Tesseract (English + Hindi) and these settings; build it from the project root.
 - Serve over HTTPS (the session cookie is `Secure`). Uploaded documents are only visible to the browser that uploaded
-  them. Signing in (mobile number + SMS code, optional) moves them into an account that works on any device; users can
+  them. Signing in (email address or mobile number + one-time code, optional) moves them into an account that works on any device; users can
   sign out or delete their account and all its documents from the header menu.
-- Set `PDFMASTER_SMS=msg91` (India; register a DLT template first) or `twilio`, and a shared `PDFMASTER_SECRET`.
-  The server refuses to start in hosted mode without an SMS setting, and refuses PostgreSQL / S3 without
+- Set `PDFMASTER_EMAIL=smtp` (any SMTP provider) and/or `PDFMASTER_SMS=msg91` (India; DLT template first) or
+  `twilio`, and a shared `PDFMASTER_SECRET`. The server refuses to start in hosted mode without one of them, and refuses PostgreSQL / S3 without
   `PDFMASTER_MULTIUSER=1`, so a shared document list cannot happen by accident.
 - Try hosted mode locally with `python run_hosted.py` (port 8001, codes printed in the server log).
 - Several server instances can share one database and bucket: edits use a version check, so a conflicting edit gets

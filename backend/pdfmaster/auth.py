@@ -1,10 +1,17 @@
-"""Accounts for the hosted website: sign in with a mobile number and a one-time code (OTP).
+"""Accounts for the hosted website: sign in with an email address or a mobile number and a
+one-time code (OTP). A new address or number creates the account.
 
 Signing in is optional. Without it a browser keeps its documents through an anonymous session
 cookie; signing in moves them to the account, so they follow the person to any device.
-Codes and session tokens are stored only as keyed hashes.
+Codes and session tokens are stored only as keyed hashes. The login (email lower-cased, or phone
+as +<country><number>) is kept in the `phone` columns, so older databases need no migration.
 
-PDFMASTER_SMS picks how codes are sent:
+PDFMASTER_EMAIL picks how emailed codes are sent (at least one of EMAIL / SMS must be set):
+  console  print to the server log (local testing only)
+  smtp     SMTP_HOST, SMTP_PORT (587), SMTP_USER, SMTP_PASSWORD, SMTP_FROM, SMTP_SECURITY (starttls|ssl|none)
+           works with Brevo, Resend, Amazon SES, Zoho, Gmail Workspace and others
+
+PDFMASTER_SMS picks how texted codes are sent:
   console  print to the server log (local testing only)
   twilio   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM
   msg91    MSG91_AUTH_KEY, MSG91_TEMPLATE_ID (a DLT-approved template with an ##otp## variable)
@@ -98,6 +105,34 @@ def mask_phone(phone: str) -> str:
     return phone[:-10] + phone[-10:-8] + "•" * 6 + phone[-2:] if len(phone) > 10 else phone
 
 
+_EMAIL = re.compile(r"[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+")
+
+
+def normalize_email(raw: str) -> str:
+    s = (raw or "").strip().lower()
+    if len(s) > 254 or not _EMAIL.fullmatch(s) or ".." in s or s.split("@")[1].endswith("."):
+        raise AuthError("That does not look like an email address")
+    return s
+
+
+def is_email(login: str) -> bool:
+    return "@" in login
+
+
+def normalize_login(raw: str) -> str:
+    """An email address (lower-cased) or a mobile number (+<country><number>)."""
+    return normalize_email(raw) if "@" in (raw or "") else normalize_phone(raw)
+
+
+def mask_email(email: str) -> str:
+    name, _, domain = email.partition("@")
+    return (name[:2] if len(name) > 4 else name[:1]) + "•" * 4 + "@" + domain
+
+
+def mask_login(login: str) -> str:
+    return mask_email(login) if is_email(login) else mask_phone(login)
+
+
 # ------------------------------------------------------------------ SMS senders
 class ConsoleSender:
     """Testing only: the code goes to the server log instead of the phone."""
@@ -139,12 +174,83 @@ class Msg91Sender:
         urllib.request.urlopen(req, timeout=15).read()
 
 
-def sender_from_env():
-    kind = os.environ.get("PDFMASTER_SMS", "").lower()
-    senders = {"console": ConsoleSender, "twilio": TwilioSender, "msg91": Msg91Sender}
-    if kind not in senders:
-        raise RuntimeError("Set PDFMASTER_SMS to twilio or msg91 (or console for local testing) to send sign-in codes")
-    return senders[kind]()
+# ---------------------------------------------------------------- email senders
+class ConsoleEmailSender:
+    """Testing only: the code goes to the server log instead of the inbox."""
+
+    name = "console"
+
+    def send(self, email: str, code: str) -> None:
+        log.warning("OTP for %s is %s (PDFMASTER_EMAIL=console: not really sent)", email, code)
+
+
+def code_email(to: str, sender: str, code: str):
+    from email.message import EmailMessage
+    from email.utils import formatdate, make_msgid
+
+    msg = EmailMessage()
+    msg["Subject"] = f"{code} is your FormEasy sign-in code"
+    msg["From"] = sender
+    msg["To"] = to
+    msg["Date"] = formatdate(localtime=False)
+    msg["Message-ID"] = make_msgid(domain=sender.rpartition("@")[2].strip("> ") or None)
+    msg.set_content(f"Your FormEasy sign-in code is {code}\n\nIt expires in {CODE_MINUTES} minutes. "
+                    "If you did not ask for it, you can ignore this email; nobody can sign in without the code.\n")
+    msg.add_alternative(
+        '<div style="font-family:Arial,sans-serif;font-size:15px;color:#222">'
+        "<p>Your FormEasy sign-in code is</p>"
+        f'<p style="font-size:30px;font-weight:bold;letter-spacing:6px;margin:12px 0">{code}</p>'
+        f"<p>It expires in {CODE_MINUTES} minutes.</p>"
+        '<p style="color:#777;font-size:13px">If you did not ask for it, you can ignore this email; '
+        "nobody can sign in without the code.</p></div>", subtype="html")
+    return msg
+
+
+class SmtpSender:
+    name = "smtp"
+
+    def __init__(self):
+        e = os.environ.get
+        self.host, self.user, self.password = e("SMTP_HOST", ""), e("SMTP_USER", ""), e("SMTP_PASSWORD", "")
+        self.sender = e("SMTP_FROM", "") or self.user
+        self.security = e("SMTP_SECURITY", "starttls").lower()
+        self.port = int(e("SMTP_PORT", "") or (465 if self.security == "ssl" else 587))
+        if not (self.host and self.sender):
+            raise RuntimeError("PDFMASTER_EMAIL=smtp needs SMTP_HOST and SMTP_FROM (plus SMTP_USER / SMTP_PASSWORD)")
+        if self.security not in ("starttls", "ssl", "none"):
+            raise RuntimeError("SMTP_SECURITY must be starttls, ssl or none")
+
+    def send(self, email: str, code: str) -> None:
+        import smtplib
+        import ssl
+
+        ctx = ssl.create_default_context()
+        if self.security == "ssl":
+            server = smtplib.SMTP_SSL(self.host, self.port, timeout=20, context=ctx)
+        else:
+            server = smtplib.SMTP(self.host, self.port, timeout=20)
+        with server:
+            if self.security == "starttls":
+                server.starttls(context=ctx)
+            if self.user:
+                server.login(self.user, self.password)
+            server.send_message(code_email(email, self.sender, code))
+
+
+def senders_from_env() -> tuple[Optional[object], Optional[object]]:
+    """(SMS sender, email sender); at least one must be configured."""
+    sms_kind = os.environ.get("PDFMASTER_SMS", "").lower()
+    email_kind = os.environ.get("PDFMASTER_EMAIL", "").lower()
+    sms = {"console": ConsoleSender, "twilio": TwilioSender, "msg91": Msg91Sender}
+    mail = {"console": ConsoleEmailSender, "smtp": SmtpSender}
+    if sms_kind and sms_kind not in sms:
+        raise RuntimeError("PDFMASTER_SMS must be msg91, twilio or console")
+    if email_kind and email_kind not in mail:
+        raise RuntimeError("PDFMASTER_EMAIL must be smtp or console")
+    if not sms_kind and not email_kind:
+        raise RuntimeError("Set PDFMASTER_EMAIL (smtp) and/or PDFMASTER_SMS (msg91 or twilio), or console for "
+                           "local testing, so sign-in codes can be sent")
+    return (sms[sms_kind]() if sms_kind else None, mail[email_kind]() if email_kind else None)
 
 
 def secret_from_env(data_root: Path) -> bytes:
@@ -160,8 +266,8 @@ def secret_from_env(data_root: Path) -> bytes:
 
 # ------------------------------------------------------------------------ Auth
 class Auth:
-    def __init__(self, db: Database, sender, secret: bytes):
-        self.db, self.sender, self.secret = db, sender, secret
+    def __init__(self, db: Database, sender, secret: bytes, email_sender=None):
+        self.db, self.sender, self.secret, self.email_sender = db, sender, secret, email_sender
         self.db.init(SCHEMA, {})
         self._ip_sends: dict[str, list[float]] = {}
         self._ip_lock = threading.Lock()
@@ -172,9 +278,17 @@ class Auth:
     def token_hash(self, token: str) -> str:
         return self._hash("session", token)
 
+    def methods(self) -> list[str]:
+        return [m for m, snd in (("email", self.email_sender), ("phone", self.sender)) if snd is not None]
+
     # ------------------------------------------------------------------ codes
-    def request_code(self, raw_phone: str, ip: str = "") -> str:
-        phone = normalize_phone(raw_phone)
+    def request_code(self, raw_login: str, ip: str = "") -> str:
+        phone = normalize_login(raw_login)  # an email address or a phone number
+        email = is_email(phone)
+        sender = self.email_sender if email else self.sender
+        if sender is None:
+            raise AuthError(f"Sign-in by {'email' if email else 'mobile number'} is not available here. "
+                            f"Use your {'mobile number' if email else 'email address'}.")
         self._limit_ip(ip)
         now = _now()
         with self.db.connect() as c:
@@ -188,19 +302,19 @@ class Auth:
                 count = row["window_count"] if now - start < timedelta(hours=1) else 0
                 start = start if count else now
                 if count >= MAX_SENDS_PER_HOUR:
-                    raise AuthError("Too many codes for this number. Try again in an hour.", 429)
+                    raise AuthError(f"Too many codes for this {'address' if email else 'number'}. Try again in an hour.", 429)
             code = f"{secrets.randbelow(10 ** 6):06d}"
             c.execute("DELETE FROM otp_codes WHERE phone=?", (phone,))
             c.execute("INSERT INTO otp_codes (phone, code_hash, expires_at, attempts, sent_at, window_start, window_count) "
                       "VALUES (?,?,?,0,?,?,?)", (phone, self._hash("otp", phone, code),
                                                  _iso(now + timedelta(minutes=CODE_MINUTES)), _iso(now), _iso(start), count + 1))
         try:
-            self.sender.send(phone, code)
+            sender.send(phone, code)
         except Exception as exc:
-            log.exception("Could not send OTP to %s", mask_phone(phone))
+            log.exception("Could not send OTP to %s", mask_login(phone))
             with self.db.connect() as c:  # let them retry straight away
                 c.execute("DELETE FROM otp_codes WHERE phone=?", (phone,))
-            raise AuthError("Could not send the code by SMS. Try again in a minute.", 502) from exc
+            raise AuthError(f"Could not send the code by {'email' if email else 'SMS'}. Try again in a minute.", 502) from exc
         return phone
 
     def _limit_ip(self, ip: str) -> None:
@@ -213,9 +327,9 @@ class Auth:
                 raise AuthError("Too many sign-in attempts from this network. Try again later.", 429)
             self._ip_sends[ip] = recent + [t]
 
-    def verify_code(self, raw_phone: str, code: str) -> dict:
+    def verify_code(self, raw_login: str, code: str) -> dict:
         """Checks the code and returns the user (created on first sign-in)."""
-        phone = normalize_phone(raw_phone)
+        phone = normalize_login(raw_login)
         code = re.sub(r"\s", "", code or "")
         now = _now()
         with self.db.connect() as c:

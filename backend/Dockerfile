@@ -19,7 +19,7 @@ ENV PDFMASTER_DATA=/tmp/formeasy \
     PDFMASTER_MULTIUSER=1 \
     PDFMASTER_RETENTION_HOURS=24 \
     PDFMASTER_STORAGE=s3 \
-    PDFMASTER_SMS=msg91 \
+    PDFMASTER_EMAIL=smtp \
     PDFMASTER_CORS=""
 RUN useradd -m formeasy
 USER formeasy

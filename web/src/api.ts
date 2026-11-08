@@ -31,14 +31,15 @@ export interface SessionInfo {
   accountRetentionDays: number | null;
   maxUploadMb: number;
   trashDays: number | null;
-  user: { phone: string } | null;
+  signIn: ("email" | "phone")[];
+  user: { login: string; kind: "email" | "phone" } | null;
 }
 
 export const api = {
   // accounts (hosted website only)
   session: () => call<SessionInfo>("/session"),
-  sendCode: (phone: string) => call<{ phone: string; resendSeconds: number; expiresMinutes: number }>("/auth/code", json({ phone })),
-  verifyCode: (phone: string, code: string) => call<SessionInfo & { movedDocuments: number }>("/auth/verify", json({ phone, code })),
+  sendCode: (login: string) => call<{ sentTo: string; kind: "email" | "phone"; resendSeconds: number; expiresMinutes: number }>("/auth/code", json({ login })),
+  verifyCode: (login: string, code: string) => call<SessionInfo & { movedDocuments: number }>("/auth/verify", json({ login, code })),
   logout: () => call<SessionInfo>("/auth/logout", { method: "POST" }),
   deleteAccount: () => call<SessionInfo & { deletedDocuments: number }>("/auth/account", { method: "DELETE" }),
 

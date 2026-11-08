@@ -47,9 +47,10 @@ def _startup_check() -> None:
 _startup_check()
 service = DocumentService(DATA)
 if MULTIUSER:
-    from .auth import Auth, AuthError, mask_phone, secret_from_env, sender_from_env
+    from .auth import Auth, AuthError, is_email, mask_login, secret_from_env, senders_from_env
 
-    auth = Auth(service.db, sender_from_env(), secret_from_env(DATA))
+    _sms, _mail = senders_from_env()
+    auth = Auth(service.db, _sms, secret_from_env(DATA), _mail)
 app = FastAPI(title="PDF Master API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -226,12 +227,21 @@ def _session(user: Optional[dict]) -> dict:
     return {"multiUser": MULTIUSER, "retentionHours": RETENTION_HOURS or None,
             "accountRetentionDays": ACCOUNT_RETENTION_DAYS or None, "maxUploadMb": MAX_UPLOAD // (1024 * 1024),
             "trashDays": TRASH_DAYS or None,
-            "user": {"phone": mask_phone(user["phone"])} if user else None}
+            "signIn": auth.methods() if MULTIUSER else [],
+            "user": {"login": mask_login(user["phone"]), "kind": "email" if is_email(user["phone"]) else "phone"} if user else None}
 
 
 # ----------------------------------------------------------------- accounts
 class CodeIn(BaseModel):
-    phone: str = Field(min_length=6, max_length=24)
+    login: str = Field("", max_length=254)  # email address or mobile number
+    phone: str = Field("", max_length=24)  # older clients
+
+    @property
+    def who(self) -> str:
+        v = (self.login or self.phone).strip()
+        if len(v) < 6:
+            raise HTTPException(422, "Enter your email address or mobile number")
+        return v
 
 
 class VerifyIn(CodeIn):
@@ -255,14 +265,15 @@ def send_code(body: CodeIn, request: Request):
     _need_accounts()
     from .auth import CODE_MINUTES, RESEND_SECONDS
 
-    phone = _auth_call(auth.request_code, body.phone, request.client.host if request.client else "")
-    return ok({"phone": mask_phone(phone), "resendSeconds": RESEND_SECONDS, "expiresMinutes": CODE_MINUTES}, "Code sent")
+    login = _auth_call(auth.request_code, body.who, request.client.host if request.client else "")
+    return ok({"sentTo": mask_login(login), "kind": "email" if is_email(login) else "phone",
+               "resendSeconds": RESEND_SECONDS, "expiresMinutes": CODE_MINUTES}, "Code sent")
 
 
 @app.post(f"{API}/auth/verify")
 def verify_code(body: VerifyIn, request: Request):
     _need_accounts()
-    user = _auth_call(auth.verify_code, body.phone, body.code)
+    user = _auth_call(auth.verify_code, body.who, body.code)
     moved = 0
     if request.state.user is None:  # documents made before signing in come along
         moved = service.reassign_owner(_owner(request.state.sid, None), _owner("", user))

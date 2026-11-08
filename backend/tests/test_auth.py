@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from pdfmaster.auth import AuthError, mask_phone, normalize_phone
+from pdfmaster.auth import AuthError, code_email, mask_email, mask_phone, normalize_email, normalize_phone
 
 FIX = Path(__file__).parent / "fixtures"
 PHONE = "98765 43210"
@@ -28,6 +28,7 @@ def hosted(tmp_path, monkeypatch):
 
     importlib.reload(api)
     api.auth.sender = Inbox()
+    api.auth.email_sender = Inbox()
     yield api
     monkeypatch.delenv("PDFMASTER_MULTIUSER")
     importlib.reload(api)
@@ -57,10 +58,10 @@ def test_sign_in_keeps_documents_and_follows_the_person(hosted):
     did = _upload(laptop)
     before = laptop.cookies["formeasy_sid"]
     s = _sign_in(hosted, laptop)
-    assert s["user"]["phone"] == "+9198••••••10" and s["movedDocuments"] == 1
+    assert s["user"]["login"] == "+9198••••••10" and s["user"]["kind"] == "phone" and s["movedDocuments"] == 1
     assert laptop.cookies["formeasy_sid"] != before  # new cookie value on sign-in
     assert _names(laptop) == [did]
-    assert laptop.get("/api/v1/session").json()["data"]["user"]["phone"] == "+9198••••••10"
+    assert laptop.get("/api/v1/session").json()["data"]["user"]["login"] == "+9198••••••10"
     # the same person on another device sees the same documents once signed in
     assert _names(phone) == []
     _sign_in(hosted, phone)
@@ -143,6 +144,7 @@ def test_shared_list_on_a_server_is_refused(tmp_path, monkeypatch):
         importlib.reload(api)
     monkeypatch.setenv("PDFMASTER_MULTIUSER", "1")
     monkeypatch.delenv("PDFMASTER_SMS", raising=False)
+    monkeypatch.delenv("PDFMASTER_EMAIL", raising=False)
     monkeypatch.setenv("PDFMASTER_STORAGE", "local")
     with pytest.raises(RuntimeError, match="PDFMASTER_SMS"):
         importlib.reload(api)
@@ -158,3 +160,94 @@ def test_phone_numbers():
         with pytest.raises(AuthError):
             normalize_phone(bad)
     assert mask_phone("+919876543210") == "+9198••••••10"
+
+
+def test_sign_in_with_email_creates_account_and_keeps_documents(hosted):
+    c = TestClient(hosted.app)
+    did = _upload(c)
+    r = c.post("/api/v1/auth/code", json={"login": "  Ashish.T@Example.com "})
+    assert r.status_code == 200, r.text
+    assert r.json()["data"]["sentTo"] == "as••••@example.com" and r.json()["data"]["kind"] == "email"
+    code = hosted.auth.email_sender.codes["ashish.t@example.com"]
+    assert not hosted.auth.sender.codes  # nothing went out by SMS
+    r = c.post("/api/v1/auth/verify", json={"login": "ashish.t@example.com", "code": code})
+    assert r.status_code == 200, r.text
+    s = r.json()["data"]
+    assert s["user"] == {"login": "as••••@example.com", "kind": "email"} and s["movedDocuments"] == 1
+    assert s["signIn"] == ["email", "phone"]
+    # the same address (any case) on another device is the same account
+    other = TestClient(hosted.app)
+    other.post("/api/v1/auth/code", json={"login": "ASHISH.T@example.com"})
+    code = hosted.auth.email_sender.codes["ashish.t@example.com"]
+    other.post("/api/v1/auth/verify", json={"login": "ASHISH.T@example.com", "code": code})
+    assert _names(other) == [did]
+
+
+def test_email_only_server_refuses_phone(hosted):
+    hosted.auth.sender = None
+    c = TestClient(hosted.app)
+    assert c.get("/api/v1/session").json()["data"]["signIn"] == ["email"]
+    r = c.post("/api/v1/auth/code", json={"login": PHONE})
+    assert r.status_code == 400 and "email" in r.json()["message"]
+    assert c.post("/api/v1/auth/code", json={"login": "not-an-email@"}).status_code == 400
+
+
+def test_email_failure_lets_user_retry(hosted):
+    class Down:
+        def send(self, *_):
+            raise OSError("smtp down")
+
+    hosted.auth.email_sender = Down()
+    c = TestClient(hosted.app)
+    r = c.post("/api/v1/auth/code", json={"login": "a@b.in"})
+    assert r.status_code == 502 and "email" in r.json()["message"]
+    hosted.auth.email_sender = Inbox()
+    assert c.post("/api/v1/auth/code", json={"login": "a@b.in"}).status_code == 200  # no 30 s wait after a failure
+
+
+def test_email_addresses_and_message():
+    assert normalize_email(" Ram.Kumar+exam@Gmail.COM ") == "ram.kumar+exam@gmail.com"
+    for bad in ("ram", "ram@", "@gmail.com", "ram@gmail", "ram@@gmail.com", "ram..k@gmail.com", "a b@x.in"):
+        with pytest.raises(AuthError):
+            normalize_email(bad)
+    assert mask_email("ram@x.in") == "r••••@x.in"
+    msg = code_email("ram@x.in", "FormEasy <no-reply@formeasy.in>", "123456")
+    assert msg["Subject"].startswith("123456") and msg["To"] == "ram@x.in"
+    assert "123456" in msg.get_body(("plain",)).get_content()
+
+
+def test_smtp_sender_sends_the_code(monkeypatch):
+    import smtplib
+
+    from pdfmaster.auth import SmtpSender
+
+    sent = {}
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout):
+            sent["addr"] = (host, port)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def starttls(self, context):
+            sent["tls"] = True
+
+        def login(self, user, password):
+            sent["login"] = (user, password)
+
+        def send_message(self, msg):
+            sent["msg"] = msg
+
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    for k, v in {"SMTP_HOST": "smtp-relay.example.com", "SMTP_USER": "u", "SMTP_PASSWORD": "p",
+                 "SMTP_FROM": "FormEasy <no-reply@formeasy.in>"}.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.delenv("SMTP_PORT", raising=False)
+    monkeypatch.delenv("SMTP_SECURITY", raising=False)
+    SmtpSender().send("ram@x.in", "654321")
+    assert sent["addr"] == ("smtp-relay.example.com", 587) and sent["tls"] and sent["login"] == ("u", "p")
+    assert sent["msg"]["To"] == "ram@x.in" and "654321" in sent["msg"]["Subject"]

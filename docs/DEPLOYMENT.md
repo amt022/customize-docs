@@ -8,17 +8,18 @@ public website where many people use one server.
 | Piece | Status |
 |---|---|
 | Per-browser private documents (`PDFMASTER_MULTIUSER=1`) | Done, tested |
-| Mobile number + OTP sign-in, sign-out, delete account | Done, tested with codes printed to the log (`PDFMASTER_SMS=console`) |
+| Email or mobile number + OTP sign-in, sign-out, delete account | Done, tested with codes printed to the log (`PDFMASTER_EMAIL=console`, `PDFMASTER_SMS=console`) |
 | PostgreSQL metadata (`PDFMASTER_DATABASE_URL`) | Done, tested against a real PostgreSQL (pgserver) |
 | S3 / R2 / B2 file storage (`PDFMASTER_STORAGE=s3`) | Done, tested against a simulated S3 (moto) |
 | Auto-delete of idle documents | Done, tested |
 | Start-up safety checks | Done, tested |
-| Real SMS sending (MSG91 / Twilio) | Code written, **not yet tried with a real account** |
+| Real email sending (SMTP: Brevo, Resend, SES, Zoho…) | Code written and tested against a fake SMTP server, **not yet tried with a real account** |
+| Real SMS sending (MSG91 / Twilio) | Optional. Code written, **not yet tried with a real account** |
 | Docker image (`backend/Dockerfile`) | Written, **never built** (no Docker on the dev machine) |
 | Security headers (nosniff, no framing, HSTS over https), Docker HEALTHCHECK, `.dockerignore` | Done |
 | Load testing | Light test done on a dev PC (`backend/loadtest.py`: 40 people uploading and rendering at once, 0 errors, renders under 0.5 s). OCR-heavy and real-server (S3 + PostgreSQL) load not tested. Estimate: 20–40 people editing at once per 2-core server, 2 OCR jobs at a time per process |
 
-Next steps, in order: SMS provider (below) → build the Docker image → database + bucket → deploy behind HTTPS →
+Next steps, in order: email provider (section 2) → build the Docker image → database + bucket → deploy behind HTTPS →
 load test.
 
 ## 1. Try hosted mode on your own PC
@@ -29,16 +30,49 @@ cd backend
 ```
 
 - Uses its own folder `backend/data-hosted`, so desktop documents are not touched.
-- Sign-in codes are not texted: they appear in this terminal as `OTP for +919876543210 is 123456`.
+- Sign-in codes are not emailed or texted: they appear in this terminal as `OTP for you@example.com is 123456`.
 - Use two different browsers (or one Incognito window) to see two separate users. Two tabs of one browser are the
   same user.
 - In Claude Code the same server is the launch configuration `pdfmaster-hosted`. The app may stop it after a while;
   start it again if the page says "This site can't be reached".
 
-## 2. Set up the OTP (SMS) provider
+## 2. Set up the email provider (recommended way to sign in)
 
-The server sends a 6-digit code by SMS. Nothing else about sign-in needs setting up: the first sign-in with a number
-creates the account, so there is no separate sign-up.
+The server sends a 6-digit code by email or SMS. Nothing else about sign-in needs setting up: the first sign-in with
+an address or number creates the account, so there is no separate sign-up. Set at least one of `PDFMASTER_EMAIL`
+and `PDFMASTER_SMS`; the sign-in dialog shows a tab for each one that is set (email first).
+
+Email is the easiest start: no DLT registration, free or nearly free, and every exam applicant already has an
+address. Any provider that offers SMTP works:
+
+| Provider | Free tier (Nov 2026, check their site) | SMTP host |
+|---|---|---|
+| Brevo | 300 emails / day | `smtp-relay.brevo.com` |
+| Resend | 3,000 emails / month | `smtp.resend.com` (user `resend`, password = API key) |
+| Amazon SES | ~₹8 per 1,000 after the free tier | `email-smtp.ap-south-1.amazonaws.com` |
+| Zoho ZeptoMail | pay as you go | `smtp.zeptomail.in` |
+
+1. Create an account with the provider.
+2. **Verify your sending domain** (for example `formeasy.in`): the provider gives you SPF and DKIM DNS records to add
+   at your domain registrar. Without them, codes land in spam. Also add a DMARC record
+   (`v=DMARC1; p=none;`) if the provider suggests one.
+3. Create SMTP credentials (user name + password or API key).
+4. Settings on the server:
+   ```
+   PDFMASTER_EMAIL=smtp
+   SMTP_HOST=smtp-relay.brevo.com
+   SMTP_PORT=587                         # default; 465 with SMTP_SECURITY=ssl
+   SMTP_SECURITY=starttls                # starttls (default), ssl or none
+   SMTP_USER=<smtp user>
+   SMTP_PASSWORD=<smtp password / API key>
+   SMTP_FROM=FormEasy <no-reply@formeasy.in>
+   ```
+5. Test from your PC (below) with your own address, and check that the email arrives in the inbox, not spam.
+
+The email's subject is `123456 is your FormEasy sign-in code` and it has a plain-text and an HTML part (see
+`code_email` in `backend/pdfmaster/auth.py`).
+
+## 2b. Optional: SMS provider (sign in with a mobile number)
 
 ### Option A: MSG91 (recommended for Indian numbers)
 
@@ -87,11 +121,12 @@ The local server reads the same settings, so you can send yourself a real code f
 
 ```bash
 cd backend
+PDFMASTER_EMAIL=smtp SMTP_HOST=... SMTP_USER=... SMTP_PASSWORD=... SMTP_FROM=... ./.venv/Scripts/python.exe run_hosted.py
 PDFMASTER_SMS=msg91 MSG91_AUTH_KEY=... MSG91_TEMPLATE_ID=... ./.venv/Scripts/python.exe run_hosted.py
 ```
 
-Open http://127.0.0.1:8001, click **Sign in**, enter your own number. If sending fails the page says "Could not send
-the code by SMS" and the terminal shows the provider's error.
+Open http://127.0.0.1:8001, click **Sign in**, enter your own address or number. If sending fails the page says
+"Could not send the code by email" (or SMS) and the terminal shows the provider's error.
 
 ### Limits built in (in `auth.py`)
 
@@ -99,7 +134,7 @@ the code by SMS" and the terminal shows the provider's error.
 |---|---|
 | Code length / lifetime | 6 digits / 10 minutes, single use |
 | Wait before resending | 30 seconds |
-| Codes per number | 5 per hour |
+| Codes per address / number | 5 per hour |
 | Wrong guesses per code | 5 |
 | Codes per network address | 20 per hour |
 | Sign-in lasts | 30 days |
@@ -118,7 +153,8 @@ PDFMASTER_S3_BUCKET=formeasy-docs
 PDFMASTER_S3_REGION=ap-south-1                # or PDFMASTER_S3_ENDPOINT for Cloudflare R2 / Backblaze B2
 AWS_ACCESS_KEY_ID=...
 AWS_SECRET_ACCESS_KEY=...
-PDFMASTER_SMS=msg91  (+ MSG91_AUTH_KEY, MSG91_TEMPLATE_ID)
+PDFMASTER_EMAIL=smtp (+ SMTP_HOST, SMTP_USER, SMTP_PASSWORD, SMTP_FROM)
+PDFMASTER_SMS=msg91  (optional; + MSG91_AUTH_KEY, MSG91_TEMPLATE_ID)
 ANTHROPIC_API_KEY=...                         # optional, enables the AI assistant
 ```
 
@@ -136,11 +172,11 @@ Make a secret with `python -c "import secrets; print(secrets.token_hex(32))"`.
   copies behind a load balancer with sticky sessions (AI chats are kept in each server's memory). Keep
   workers × 10 below PostgreSQL's connection limit.
 
-The server refuses to start if PostgreSQL / S3 is set without `PDFMASTER_MULTIUSER=1`, or if hosted mode has no
-`PDFMASTER_SMS`, so all visitors can never end up sharing one document list.
+The server refuses to start if PostgreSQL / S3 is set without `PDFMASTER_MULTIUSER=1`, or if hosted mode has neither
+`PDFMASTER_EMAIL` nor `PDFMASTER_SMS`, so all visitors can never end up sharing one document list.
 
 ## 4. Still to do
 
-- Run real SMS once (section 2) and build the Docker image once.
+- Send one real email code (section 2), optionally one real SMS (2b), and build the Docker image once.
 - Re-run `python loadtest.py https://your-site 40` against the real deployment (S3 + PostgreSQL) before launch.
 - Optional: Google sign-in; moving OCR to a separate job queue so long OCR jobs do not slow editing.

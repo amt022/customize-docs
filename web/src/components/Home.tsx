@@ -274,7 +274,7 @@ function KeepNote({ session, onSignIn }: { session: SessionInfo; onSignIn: () =>
   if (session.user) {
     return (
       <p className="keep-note">
-        Saved to your account ({session.user.phone}).{" "}
+        Saved to your account ({session.user.login}).{" "}
         {days ? `Documents you don't open for ${after(days * 24)} are deleted.` : "Your documents stay until you delete them."}
       </p>
     );

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, type SessionInfo } from "../api";
 import Dialog from "./Dialog";
 
-/** Header button: "Sign in" (mobile number + OTP) or the signed-in number with sign-out / delete account. */
+/** Header button: "Sign in" (email or mobile number + OTP) or the signed-in number with sign-out / delete account. */
 export default function Account({ session, onChange, openSignIn = false, onSignInShown }: {
   session: SessionInfo;
   onChange: (s: SessionInfo) => void;
@@ -34,13 +34,13 @@ export default function Account({ session, onChange, openSignIn = false, onSignI
     return (
       <>
         <button className="btn account-btn" onClick={() => setOpen(true)}>Sign in</button>
-        {open && <SignIn onClose={() => setOpen(false)} onDone={(s) => { setOpen(false); onChange(s); }} />}
+        {open && <SignIn methods={session.signIn?.length ? session.signIn : ["phone"]} onClose={() => setOpen(false)} onDone={(s) => { setOpen(false); onChange(s); }} />}
       </>
     );
   }
   return (
     <div className="account" ref={box}>
-      <button className="btn account-btn" aria-expanded={menu} onClick={() => setMenu(!menu)}>📱 {session.user.phone}</button>
+      <button className="btn account-btn" aria-expanded={menu} onClick={() => setMenu(!menu)}>{session.user.kind === "email" ? "✉️" : "📱"} {session.user.login}</button>
       {menu && (
         <div className="account-menu" role="menu">
           <button role="menuitem" onClick={async () => { setMenu(false); onChange(await api.logout()); }}>Sign out</button>
@@ -69,7 +69,8 @@ export default function Account({ session, onChange, openSignIn = false, onSignI
   );
 }
 
-function SignIn({ onClose, onDone }: { onClose: () => void; onDone: (s: SessionInfo) => void }) {
+function SignIn({ methods, onClose, onDone }: { methods: ("email" | "phone")[]; onClose: () => void; onDone: (s: SessionInfo) => void }) {
+  const [method, setMethod] = useState(methods[0]);
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [sentTo, setSentTo] = useState<string | null>(null);
@@ -90,7 +91,7 @@ function SignIn({ onClose, onDone }: { onClose: () => void; onDone: (s: SessionI
   };
   const send = () => run(async () => {
     const r = await api.sendCode(phone);
-    setSentTo(r.phone);
+    setSentTo(r.sentTo);
     setWait(r.resendSeconds);
     setCode("");
   });
@@ -100,23 +101,38 @@ function SignIn({ onClose, onDone }: { onClose: () => void; onDone: (s: SessionI
     <Dialog title="Sign in or sign up" onClose={onClose} width={400}>
       {sentTo === null ? (
         <form className="signin" onSubmit={(e) => { e.preventDefault(); send(); }}>
-          <p className="muted small">New here? Just enter your number and your account is created automatically. Signed in, your documents are kept and open on any device. We text you a one-time code; no password needed.</p>
-          <label>Mobile number
-            <input type="tel" inputMode="tel" autoComplete="tel" placeholder="98765 43210" value={phone}
-              onChange={(e) => setPhone(e.target.value)} autoFocus required />
-          </label>
+          {methods.length > 1 && (
+            <div className="signin-tabs" role="tablist">
+              {methods.map((m) => (
+                <button key={m} type="button" role="tab" aria-selected={method === m} className={"btn small" + (method === m ? " primary" : "")}
+                  onClick={() => { setMethod(m); setPhone(""); setError(null); }}>{m === "email" ? "Email" : "Mobile number"}</button>
+              ))}
+            </div>
+          )}
+          <p className="muted small">New here? Just enter your {method === "email" ? "email address" : "number"} and your account is created automatically. Signed in, your documents are kept and open on any device. We {method === "email" ? "email" : "text"} you a one-time code; no password needed.</p>
+          {method === "email" ? (
+            <label key="email">Email address
+              <input type="email" inputMode="email" autoComplete="email" placeholder="you@gmail.com" value={phone}
+                onChange={(e) => setPhone(e.target.value)} autoFocus required />
+            </label>
+          ) : (
+            <label key="phone">Mobile number
+              <input type="tel" inputMode="tel" autoComplete="tel" placeholder="98765 43210" value={phone}
+                onChange={(e) => setPhone(e.target.value)} autoFocus required />
+            </label>
+          )}
           <button className="btn primary" type="submit" disabled={busy || !phone.trim()}>{busy ? "Sending…" : "Send code"}</button>
         </form>
       ) : (
         <form className="signin" onSubmit={(e) => { e.preventDefault(); verify(); }}>
-          <p className="muted small">Enter the 6-digit code sent to <b>{sentTo}</b>.</p>
+          <p className="muted small">Enter the 6-digit code sent to <b>{sentTo}</b>.{method === "email" && " Not there after a minute? Check your Spam or Promotions folder."}</p>
           <label>Code
             <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]*" maxLength={7} value={code}
               onChange={(e) => setCode(e.target.value)} autoFocus required className="otp" />
           </label>
           <button className="btn primary" type="submit" disabled={busy || code.replace(/\s/g, "").length < 6}>{busy ? "Checking…" : "Sign in"}</button>
           <div className="signin-links small">
-            <button type="button" className="link" onClick={() => { setSentTo(null); setError(null); }}>Change number</button>
+            <button type="button" className="link" onClick={() => { setSentTo(null); setError(null); }}>{method === "email" ? "Change email" : "Change number"}</button>
             <button type="button" className="link" disabled={wait > 0 || busy} onClick={send}>{wait > 0 ? `Resend in ${wait}s` : "Resend code"}</button>
           </div>
         </form>

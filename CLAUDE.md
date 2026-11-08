@@ -3,7 +3,7 @@
 All-in-one app for government / exam / admission paperwork: hub home, Photo & Signature tool, PDF Studio.
 
 ## Stack and layout
-- `backend/pdfmaster` – Python, FastAPI, pikepdf. `engine/` holds the PDF/scan logic, `service.py` the API layer, `tests/` pytest (93 tests, all passing); `storage.py` (local folder or S3) and `db.py` (SQLite or PostgreSQL) hold the data.
+- `backend/pdfmaster` – Python, FastAPI, pikepdf. `engine/` holds the PDF/scan logic, `service.py` the API layer, `tests/` pytest (98 tests, all passing); `storage.py` (local folder or S3) and `db.py` (SQLite or PostgreSQL) hold the data.
 - `web/` – React + TS + Vite. Build with `npm run build` after changes.
 - `desktop/` – Electron wrapper.
 
@@ -23,9 +23,9 @@ All-in-one app for government / exam / admission paperwork: hub home, Photo & Si
 
 ## Two modes: desktop vs hosted website
 - Desktop (default, Electron): one user, owner `""`, SQLite + files under `PDFMASTER_DATA`, no sign-in, no expiry.
-- Hosted (`PDFMASTER_MULTIUSER=1`): every document row has `owner`; `service.current_owner` (ContextVar) is set per request in `api.py` middleware from the `formeasy_sid` cookie: signed-in → `u:<user id>`, otherwise sha256 of the cookie. `service.get()` filters by owner, so every endpoint is scoped through it. Optional sign-in = mobile OTP (`auth.py`, endpoints `/auth/code`, `/auth/verify`, `/auth/logout`, `DELETE /auth/account`, `GET /session`); sign-in moves the browser's documents to the account.
+- Hosted (`PDFMASTER_MULTIUSER=1`): every document row has `owner`; `service.current_owner` (ContextVar) is set per request in `api.py` middleware from the `formeasy_sid` cookie: signed-in → `u:<user id>`, otherwise sha256 of the cookie. `service.get()` filters by owner, so every endpoint is scoped through it. Optional sign-in = email or mobile OTP (`auth.py`, endpoints `/auth/code`, `/auth/verify`, `/auth/logout`, `DELETE /auth/account`, `GET /session`); sign-in moves the browser's documents to the account.
 - Storage: `storage.py` LocalStore / S3Store (`PDFMASTER_STORAGE=s3`); `db.py` SQLite / PostgreSQL (`PDFMASTER_DATABASE_URL`, `?` placeholders translated, literal `%` doubled). Version blobs `docs/<id>/v<n>-<random>.pdf`, name in `document_versions.storage_key`; OCR `docs/<id>/ocr/<page key>.json`.
-- Deployment status, OTP provider setup (MSG91 / Twilio), env vars and next steps: **`docs/DEPLOYMENT.md`** (start there for any "go live" work). Not yet done: real SMS test, Docker build, load test.
+- Deployment status, OTP provider setup (SMTP email; MSG91 / Twilio SMS), env vars and next steps: **`docs/DEPLOYMENT.md`** (start there for any "go live" work). Not yet done: real email / SMS test, Docker build, load test.
 
 ## Known limitations
 - New text is slightly lighter than bold photographed text; faint smooth patch on grainy backgrounds.
@@ -33,6 +33,7 @@ All-in-one app for government / exam / admission paperwork: hub home, Photo & Si
 - Tilt handled by shear only.
 
 ## Change log (newest first; add a line after each task)
+- Email sign-in: OTP by email as well as SMS (`auth.py` `normalize_login`/`mask_login`, `ConsoleEmailSender`, `SmtpSender` + `code_email`; `senders_from_env` needs `PDFMASTER_EMAIL` and/or `PDFMASTER_SMS`). Login (email lower-cased or +phone) stored in the existing `phone` columns, no migration. API takes `login` (old `phone` still accepted), returns `sentTo`/`kind`; session has `signIn` methods and `user {login, kind}`. Dialog: Email / Mobile number tabs (email first), spam-folder hint. `run_hosted.py` sets both to console; Dockerfile defaults to `PDFMASTER_EMAIL=smtp`. DEPLOYMENT.md section 2 = email providers (Brevo, Resend, SES, ZeptoMail, SPF/DKIM). Tests: 5 new in `test_auth.py`.
 - Exam presets + name/date on photo: `requirements.ts` TEMPLATES now grouped presets (SSC, UPSC, IBPS/SBI/RBI incl. thumb + declaration, NTA NEET/JEE/CUET, RRB, PAN, General) with `note` and `nameDate`; choosing one turns limits on at once (also applied to the first uploaded picture). New "Name and date on photo" panel: white band at the bottom (`Art.stamp`, drawn in `render`, part of undo), name uppercased and remembered (`formeasy.stampName`), date defaults to today, photo refitted above the band; UPSC and NTA photos switch it on. Limits are commonly published values, UI says to check the notification.
 - Photo & Signature download: format list now also has PDF (one page the picture's size, 96 px/in) and Word (picture at natural size, max text width); both wrap the JPEG in the browser (`web/src/wrap.ts`: tiny PDF writer + stored zip), so quality and "Set file size" work for them too.
 - Download in other formats: Download dialog now has a Format picker (PDF, JPG, PNG, Word, Excel, Text) with page range and image quality (100/150/300 dpi). `GET /documents/{id}/convert?format=&pages=&dpi=` (`engine/convert.py`, `service.convert`); several pages of JPG/PNG come as a .zip; Word/Excel written as raw Office XML (no new deps); Excel finds columns from merged cell spans (right-aligned amounts line up) and stores amounts (also ₹/Rs prefixed) as numbers; un-OCR'd scan pages go into Word as pictures (`X-Pages-Without-Text` header, UI warns). Tests: `test_convert.py`.
