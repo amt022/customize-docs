@@ -3,6 +3,7 @@ import { api, ApiError, type SessionInfo } from "../api";
 import type { DocumentInfo } from "../types";
 import Account from "./Account";
 import Dialog from "./Dialog";
+import { SiteFooter } from "./Legal";
 import ImageEditor from "./ImageEditor";
 import Logo from "./Logo";
 import ThemeToggle from "./ThemeToggle";
@@ -262,6 +263,7 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
         )}
       </main>
       )}
+      <SiteFooter session={session} />
     </div>
   );
 }
@@ -282,7 +284,8 @@ function KeepNote({ session, onSignIn }: { session: SessionInfo; onSignIn: () =>
   return (
     <p className="keep-note">
       {hours ? <>Files are deleted automatically {after(hours)} after you last use them. </> : null}
-      <button className="link" onClick={onSignIn}>Sign in with your mobile number</button> to keep them and open them on any device.
+      <button className="link" onClick={onSignIn}>Sign in</button> to keep them and open them on any device.
+      {" "}By uploading you agree to the <a href="#terms">Terms of Use</a> and <a href="#privacy">Privacy Policy</a>.
     </p>
   );
 }

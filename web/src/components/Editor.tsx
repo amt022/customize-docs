@@ -458,6 +458,7 @@ export default function Editor({ id, startTool = "edit", onClose }: { id: string
             <div className="scan-banner info">
               <strong>Scanned page · {model?.ocr?.words} words recognised</strong>
               {model?.ocr?.meanConfidence != null && <> (confidence {model.ocr.meanConfidence}%)</>}. Click a word to edit it, Shift+click to select several words (e.g. a whole phone number); the scan is patched to match.
+              <span className="forgery-note"> Only correct documents that are yours to change: altering certificates, marksheets or ID cards is forgery and a crime.</span>
               <button className="btn small" onClick={() => act((v) => api.textLayer(id, v), "PDF is now searchable")}>Make searchable</button>
             </div>
           )}

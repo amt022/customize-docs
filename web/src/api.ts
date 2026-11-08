@@ -33,13 +33,26 @@ export interface SessionInfo {
   trashDays: number | null;
   signIn: ("email" | "phone")[];
   user: { login: string; kind: "email" | "phone" } | null;
+  legal: LegalInfo | null;
+}
+
+/** Who runs the hosted website, for the Privacy Policy / Terms pages and the footer. */
+export interface LegalInfo {
+  version: string;
+  operator: string;
+  grievanceName: string;
+  grievanceEmail: string;
+  contactEmail: string;
+  address: string;
+  dataRegion: string;
+  logDays: number;
 }
 
 export const api = {
   // accounts (hosted website only)
   session: () => call<SessionInfo>("/session"),
   sendCode: (login: string) => call<{ sentTo: string; kind: "email" | "phone"; resendSeconds: number; expiresMinutes: number }>("/auth/code", json({ login })),
-  verifyCode: (login: string, code: string) => call<SessionInfo & { movedDocuments: number }>("/auth/verify", json({ login, code })),
+  verifyCode: (login: string, code: string) => call<SessionInfo & { movedDocuments: number }>("/auth/verify", json({ login, code, acceptTerms: true })),
   logout: () => call<SessionInfo>("/auth/logout", { method: "POST" }),
   deleteAccount: () => call<SessionInfo & { deletedDocuments: number }>("/auth/account", { method: "DELETE" }),
 

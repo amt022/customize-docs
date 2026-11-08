@@ -17,6 +17,7 @@ public website where many people use one server.
 | Real SMS sending (MSG91 / Twilio) | Optional. Code written, **not yet tried with a real account** |
 | Docker image (`backend/Dockerfile`) | Written, **never built** (no Docker on the dev machine) |
 | Security headers (nosniff, no framing, HSTS over https), Docker HEALTHCHECK, `.dockerignore` | Done |
+| Legal basics: Privacy Policy + Terms pages, consent checkbox at sign-in (version stored per user), grievance contact in the footer, forgery warning, 180-day access log | Done, tested. **Wording not yet checked by a lawyer** (section 4) |
 | Load testing | Light test done on a dev PC (`backend/loadtest.py`: 40 people uploading and rendering at once, 0 errors, renders under 0.5 s). OCR-heavy and real-server (S3 + PostgreSQL) load not tested. Estimate: 20–40 people editing at once per 2-core server, 2 OCR jobs at a time per process |
 
 Next steps, in order: email provider (section 2) → build the Docker image → database + bucket → deploy behind HTTPS →
@@ -156,6 +157,12 @@ AWS_SECRET_ACCESS_KEY=...
 PDFMASTER_EMAIL=smtp (+ SMTP_HOST, SMTP_USER, SMTP_PASSWORD, SMTP_FROM)
 PDFMASTER_SMS=msg91  (optional; + MSG91_AUTH_KEY, MSG91_TEMPLATE_ID)
 ANTHROPIC_API_KEY=...                         # optional, enables the AI assistant
+PDFMASTER_OPERATOR=Ashish Tripathi           # required: who runs the site (shown on Privacy / Terms)
+PDFMASTER_GRIEVANCE_EMAIL=grievance@formeasy.in   # required: grievance officer (IT Rules 2021, DPDP Act)
+PDFMASTER_GRIEVANCE_NAME=Ashish Tripathi
+PDFMASTER_ADDRESS=<postal address>
+PDFMASTER_DATA_REGION=India (AWS Mumbai, ap-south-1)
+PDFMASTER_LOG_DIR=/data/logs                  # persistent disk; access logs kept PDFMASTER_LOG_DAYS (180)
 ```
 
 Make a secret with `python -c "import secrets; print(secrets.token_hex(32))"`.
@@ -173,10 +180,34 @@ Make a secret with `python -c "import secrets; print(secrets.token_hex(32))"`.
   workers × 10 below PostgreSQL's connection limit.
 
 The server refuses to start if PostgreSQL / S3 is set without `PDFMASTER_MULTIUSER=1`, or if hosted mode has neither
-`PDFMASTER_EMAIL` nor `PDFMASTER_SMS`, so all visitors can never end up sharing one document list.
+`PDFMASTER_EMAIL` nor `PDFMASTER_SMS`, or (with HTTPS cookies on) without `PDFMASTER_OPERATOR` and
+`PDFMASTER_GRIEVANCE_EMAIL`, so all visitors can never end up sharing one document list.
+
+## 3b. Legal (India)
+
+Built in (`backend/pdfmaster/legal.py`, `web/src/components/Legal.tsx`):
+
+| Rule | What the site does |
+|---|---|
+| DPDP Act 2023 / Rules 2025: notice and consent | Privacy Policy page (`#privacy`); sign-in needs a ticked "I agree… I am 18 or older, or my parent / guardian agrees" box; the version agreed (`legal.TERMS_VERSION`) and time are stored in `users.terms_version` / `terms_accepted_at`. Bump `TERMS_VERSION` when the pages change in substance |
+| DPDP: erasure, withdrawal, retention | Delete document / Delete account; automatic deletion times are shown on the Privacy page from the server settings |
+| DPDP: children | Policy and checkbox ask for parent / guardian agreement under 18. No tracking or ads |
+| IT Rules 2021: grievance officer, terms | Footer on every home page shows Privacy Policy, Terms of Use and the grievance officer; Terms forbid forgery and impersonation |
+| CERT-In directions 2022: logs for 180 days | Daily `access.log` files in `PDFMASTER_LOG_DIR` (default `<data>/logs`), kept `PDFMASTER_LOG_DAYS` (180): time (UTC), IP, pseudonymous account / browser id, request, status; sign-in and account deletion events. No emails, numbers or file names. In Docker put the folder on a persistent disk (the default `/tmp` is lost on restart) |
+| Forgery risk (Bharatiya Nyaya Sanhita ss. 336–340) | Terms forbid it; the scan editor shows a warning; edited scan areas carry a `/PMPatch` marker inside the PDF |
+
+Still your job before launch:
+
+- Have a lawyer read the Privacy Policy and Terms wording (it is a sensible starting point, not legal advice).
+- Use an Indian region for the database and bucket, and set `PDFMASTER_DATA_REGION` to match.
+- CERT-In also asks for clocks synced to NTP (cloud servers do this by default) and for cyber incidents to be
+  reported to CERT-In within 6 hours (incident@cert-in.org.in). Keep a short written plan for who does that.
+- SMS sign-in only: register the sender ID and template on DLT (section 2b).
+- If you ever charge money: GST registration and a refund policy page.
 
 ## 4. Still to do
 
 - Send one real email code (section 2), optionally one real SMS (2b), and build the Docker image once.
+- Fill in the operator / grievance settings and get the legal pages reviewed (section 3b).
 - Re-run `python loadtest.py https://your-site 40` against the real deployment (S3 + PostgreSQL) before launch.
 - Optional: Google sign-in; moving OCR to a separate job queue so long OCR jobs do not slow editing.

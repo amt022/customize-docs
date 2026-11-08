@@ -319,6 +319,9 @@ Environment variables (all optional):
 | `PDFMASTER_EMAIL` | How emailed sign-in codes are sent: `smtp` or `console` (server log, local testing only). Hosted mode needs this and/or `PDFMASTER_SMS` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM` | SMTP server for `PDFMASTER_EMAIL=smtp` (port 587 + `starttls` by default; `ssl` uses 465) |
 | `PDFMASTER_SMS` | How texted sign-in codes are sent: `msg91`, `twilio`, or `console`. Optional when email is set |
+| `PDFMASTER_OPERATOR`, `PDFMASTER_GRIEVANCE_EMAIL` | Who runs the site and the grievance officer's email, shown on the Privacy Policy / Terms pages and footer. Required for hosted mode over HTTPS |
+| `PDFMASTER_GRIEVANCE_NAME`, `PDFMASTER_CONTACT_EMAIL`, `PDFMASTER_ADDRESS`, `PDFMASTER_DATA_REGION` | Optional details for those pages |
+| `PDFMASTER_LOG_DIR`, `PDFMASTER_LOG_DAYS` | Hosted access log folder (default `<data>/logs`) and days kept (default 180, CERT-In) |
 | `MSG91_AUTH_KEY`, `MSG91_TEMPLATE_ID` | MSG91: auth key and a DLT-approved OTP template with an `##otp##` variable |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_FROM` | Twilio SMS |
 | `PDFMASTER_SECRET` | Key for hashing codes and session tokens; must be the same on every server (default: `<data>/secret.key`) |

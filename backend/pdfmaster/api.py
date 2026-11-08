@@ -51,6 +51,10 @@ if MULTIUSER:
 
     _sms, _mail = senders_from_env()
     auth = Auth(service.db, _sms, secret_from_env(DATA), _mail)
+    from . import legal
+
+    legal.check(real_deployment=COOKIE_SECURE)  # plain-http local testing may leave the operator details out
+    _access = legal.access_logger(DATA)
 app = FastAPI(title="PDF Master API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -98,8 +102,17 @@ async def _local_token(request: Request, call_next):
 
 @app.middleware("http")
 async def _security_headers(request: Request, call_next):
+    import time
+
+    started = time.perf_counter()
     response = await call_next(request)
     if MULTIUSER:
+        # access log kept PDFMASTER_LOG_DAYS (CERT-In): who (pseudonymous), from where, what, result; no names or emails
+        user = getattr(request.state, "user", None)
+        sid = getattr(request.state, "sid", "")
+        who = f"u:{user['id']}" if user else ("a:" + hashlib.sha256(sid.encode()).hexdigest()[:16] if sid else "-")
+        _access.info("%s %s %s %s %d %dms", request.client.host if request.client else "-", who, request.method,
+                     request.url.path, response.status_code, (time.perf_counter() - started) * 1000)
         h = response.headers
         h.setdefault("X-Content-Type-Options", "nosniff")
         h.setdefault("X-Frame-Options", "DENY")
@@ -228,6 +241,7 @@ def _session(user: Optional[dict]) -> dict:
             "accountRetentionDays": ACCOUNT_RETENTION_DAYS or None, "maxUploadMb": MAX_UPLOAD // (1024 * 1024),
             "trashDays": TRASH_DAYS or None,
             "signIn": auth.methods() if MULTIUSER else [],
+            "legal": legal.settings() if MULTIUSER else None,
             "user": {"login": mask_login(user["phone"]), "kind": "email" if is_email(user["phone"]) else "phone"} if user else None}
 
 
@@ -246,6 +260,7 @@ class CodeIn(BaseModel):
 
 class VerifyIn(CodeIn):
     code: str = Field(min_length=4, max_length=10)
+    acceptTerms: bool = False  # the sign-in dialog's "I agree to the Privacy Policy and Terms" box
 
 
 def _need_accounts() -> None:
@@ -273,7 +288,10 @@ def send_code(body: CodeIn, request: Request):
 @app.post(f"{API}/auth/verify")
 def verify_code(body: VerifyIn, request: Request):
     _need_accounts()
-    user = _auth_call(auth.verify_code, body.who, body.code)
+    if not body.acceptTerms:
+        raise HTTPException(422, "Please agree to the Privacy Policy and Terms of Use to sign in")
+    user = _auth_call(auth.verify_code, body.who, body.code, legal.TERMS_VERSION)
+    _access.info("- u:%s SIGN-IN terms=%s", user["id"], legal.TERMS_VERSION)
     moved = 0
     if request.state.user is None:  # documents made before signing in come along
         moved = service.reassign_owner(_owner(request.state.sid, None), _owner("", user))
@@ -304,6 +322,7 @@ def delete_account(request: Request):
         raise HTTPException(401, "Sign in first")
     n = service.delete_owner(_owner("", user))
     auth.delete_user(user["id"])
+    _access.info("- u:%s ACCOUNT-DELETED documents=%d", user["id"], n)
     response = ok({**_session(None), "deletedDocuments": n}, "Account deleted")
     _set_sid(response, _new_sid())
     return response

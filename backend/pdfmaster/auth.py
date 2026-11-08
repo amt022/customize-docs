@@ -268,7 +268,8 @@ def secret_from_env(data_root: Path) -> bytes:
 class Auth:
     def __init__(self, db: Database, sender, secret: bytes, email_sender=None):
         self.db, self.sender, self.secret, self.email_sender = db, sender, secret, email_sender
-        self.db.init(SCHEMA, {})
+        # consent: which Privacy Policy / Terms version the person accepted, and when (latest sign-in)
+        self.db.init(SCHEMA, {"users": [("terms_version", "TEXT"), ("terms_accepted_at", "TEXT")]})
         self._ip_sends: dict[str, list[float]] = {}
         self._ip_lock = threading.Lock()
 
@@ -327,7 +328,7 @@ class Auth:
                 raise AuthError("Too many sign-in attempts from this network. Try again later.", 429)
             self._ip_sends[ip] = recent + [t]
 
-    def verify_code(self, raw_login: str, code: str) -> dict:
+    def verify_code(self, raw_login: str, code: str, terms_version: Optional[str] = None) -> dict:
         """Checks the code and returns the user (created on first sign-in)."""
         phone = normalize_login(raw_login)
         code = re.sub(r"\s", "", code or "")
@@ -355,6 +356,9 @@ class Auth:
                           (user["id"], phone, _iso(now), _iso(now)))
             else:
                 c.execute("UPDATE users SET last_login_at=? WHERE id=?", (_iso(now), user["id"]))
+            if terms_version:
+                c.execute("UPDATE users SET terms_version=?, terms_accepted_at=? WHERE id=?",
+                          (terms_version, _iso(now), user["id"]))
         return dict(user)
 
     # --------------------------------------------------------------- sessions

@@ -48,7 +48,7 @@ def _sign_in(api, c, phone=PHONE):
     r = c.post("/api/v1/auth/code", json={"phone": phone})
     assert r.status_code == 200, r.text
     code = api.auth.sender.codes["+919876543210"]
-    r = c.post("/api/v1/auth/verify", json={"phone": phone, "code": code})
+    r = c.post("/api/v1/auth/verify", json={"phone": phone, "acceptTerms": True, "code": code})
     assert r.status_code == 200, r.text
     return r.json()["data"]
 
@@ -83,11 +83,11 @@ def test_wrong_codes_and_limits(hosted):
     real = hosted.auth.sender.codes["+919876543210"]
     wrong = "000000" if real != "000000" else "111111"
     for left in (4, 3, 2, 1):
-        r = c.post("/api/v1/auth/verify", json={"phone": PHONE, "code": wrong})
+        r = c.post("/api/v1/auth/verify", json={"phone": PHONE, "acceptTerms": True, "code": wrong})
         assert r.status_code == 400 and f"{left} tr" in r.json()["message"]
-    assert c.post("/api/v1/auth/verify", json={"phone": PHONE, "code": wrong}).status_code == 400
+    assert c.post("/api/v1/auth/verify", json={"phone": PHONE, "acceptTerms": True, "code": wrong}).status_code == 400
     # five wrong guesses use up the code, even the right one is refused now
-    assert c.post("/api/v1/auth/verify", json={"phone": PHONE, "code": real}).status_code == 429
+    assert c.post("/api/v1/auth/verify", json={"phone": PHONE, "acceptTerms": True, "code": real}).status_code == 429
     assert c.get("/api/v1/session").json()["data"]["user"] is None
 
 
@@ -96,7 +96,7 @@ def test_code_is_single_use(hosted):
     _sign_in(hosted, c)
     code = hosted.auth.sender.codes["+919876543210"]
     other = TestClient(hosted.app)
-    assert other.post("/api/v1/auth/verify", json={"phone": PHONE, "code": code}).status_code == 400
+    assert other.post("/api/v1/auth/verify", json={"phone": PHONE, "acceptTerms": True, "code": code}).status_code == 400
 
 
 def test_delete_account_erases_everything(hosted):
@@ -170,7 +170,7 @@ def test_sign_in_with_email_creates_account_and_keeps_documents(hosted):
     assert r.json()["data"]["sentTo"] == "as••••@example.com" and r.json()["data"]["kind"] == "email"
     code = hosted.auth.email_sender.codes["ashish.t@example.com"]
     assert not hosted.auth.sender.codes  # nothing went out by SMS
-    r = c.post("/api/v1/auth/verify", json={"login": "ashish.t@example.com", "code": code})
+    r = c.post("/api/v1/auth/verify", json={"login": "ashish.t@example.com", "acceptTerms": True, "code": code})
     assert r.status_code == 200, r.text
     s = r.json()["data"]
     assert s["user"] == {"login": "as••••@example.com", "kind": "email"} and s["movedDocuments"] == 1
@@ -179,7 +179,7 @@ def test_sign_in_with_email_creates_account_and_keeps_documents(hosted):
     other = TestClient(hosted.app)
     other.post("/api/v1/auth/code", json={"login": "ASHISH.T@example.com"})
     code = hosted.auth.email_sender.codes["ashish.t@example.com"]
-    other.post("/api/v1/auth/verify", json={"login": "ASHISH.T@example.com", "code": code})
+    other.post("/api/v1/auth/verify", json={"login": "ASHISH.T@example.com", "acceptTerms": True, "code": code})
     assert _names(other) == [did]
 
 

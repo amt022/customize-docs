@@ -72,6 +72,7 @@ export default function Account({ session, onChange, openSignIn = false, onSignI
 function SignIn({ methods, onClose, onDone }: { methods: ("email" | "phone")[]; onClose: () => void; onDone: (s: SessionInfo) => void }) {
   const [method, setMethod] = useState(methods[0]);
   const [phone, setPhone] = useState("");
+  const [agree, setAgree] = useState(false);
   const [code, setCode] = useState("");
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [wait, setWait] = useState(0);
@@ -121,7 +122,11 @@ function SignIn({ methods, onClose, onDone }: { methods: ("email" | "phone")[]; 
                 onChange={(e) => setPhone(e.target.value)} autoFocus required />
             </label>
           )}
-          <button className="btn primary" type="submit" disabled={busy || !phone.trim()}>{busy ? "Sending…" : "Send code"}</button>
+          <label className="consent small">
+            <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} required />
+            <span>I agree to the <a href="#privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="#terms" target="_blank" rel="noopener">Terms of Use</a>. I am 18 or older, or my parent / guardian agrees.</span>
+          </label>
+          <button className="btn primary" type="submit" disabled={busy || !phone.trim() || !agree}>{busy ? "Sending…" : "Send code"}</button>
         </form>
       ) : (
         <form className="signin" onSubmit={(e) => { e.preventDefault(); verify(); }}>
