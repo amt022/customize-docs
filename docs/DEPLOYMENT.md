@@ -247,3 +247,18 @@ backups in `/var/backups/formeasy` (7 days, copy them off the server now and the
 
 Growing later: move documents to Cloudflare R2 (`PDFMASTER_STORAGE=s3` lines in `.env.example`, 10 GB free) and the
 database to Neon / Supabase PostgreSQL, then run several servers behind the same tunnel.
+
+### 5b. Free version (₹0 / month)
+
+Same steps, with an **Oracle Cloud "Always Free"** server instead of a paid one; Cloudflare (tunnel, HTTPS) and Brevo
+(300 emails / day) are free anyway. The only cost is a domain (about ₹100–900 / year); a temporary random
+`*.trycloudflare.com` address is possible for testing but changes on every restart.
+
+- Sign up at oracle.com/cloud/free, home region **India West (Mumbai)** or **India South (Hyderabad)** (cannot be
+  changed later). A card is needed for verification; nothing is charged within the free limits.
+- Create instance: image **Ubuntu 24.04**, shape **Ampere A1 (VM.Standard.A1.Flex), 2 OCPU / 12 GB** (free up to
+  4 OCPU / 24 GB), upload your SSH public key. "Out of capacity" → try another availability domain or later.
+- Log in as `ubuntu` (not root): `ssh ubuntu@IP`, then `sudo git clone ...` and `sudo bash .../setup.sh`.
+  `setup.sh` keeps Oracle's own firewall rules (Oracle warns against ufw); no ingress rule is needed for the tunnel.
+- Oracle may reclaim Always Free servers that stay almost idle for 7 days. Upgrading the account to
+  *Pay As You Go* (still ₹0 within the free limits) stops that; set a budget alert at ₹1 to be safe.

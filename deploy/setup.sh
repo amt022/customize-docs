@@ -19,7 +19,10 @@ if ! swapon --show | grep -q .; then
 fi
 
 echo "== Firewall: only SSH in (the website comes in through the Cloudflare Tunnel, which dials out)"
-if command -v ufw >/dev/null; then
+# Oracle Cloud images ship their own iptables rules (SSH only) and Oracle warns that ufw can break them; keep theirs.
+if [ -f /etc/iptables/rules.v4 ] && grep -qi "InstanceServices\|169.254" /etc/iptables/rules.v4; then
+  echo "Oracle Cloud firewall rules found, leaving them as they are"
+elif command -v ufw >/dev/null; then
   ufw allow OpenSSH >/dev/null && ufw --force enable >/dev/null
 fi
 
