@@ -1,0 +1,25 @@
+# Builds the hosted-server Docker image on every push, so a broken Dockerfile shows up before deploying.
+name: docker-build
+on:
+  push:
+    branches: [main]
+    paths: [backend/**, web/**, deploy/**, .github/workflows/docker.yml]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image
+        run: docker build -f backend/Dockerfile -t formeasy:ci .
+      - name: Start it and check health
+        run: |
+          docker run -d --name fe -p 8000:8000 \
+            -e PDFMASTER_STORAGE=local -e PDFMASTER_DATA=/data -e PDFMASTER_EMAIL=console \
+            -e PDFMASTER_OPERATOR="CI" -e PDFMASTER_GRIEVANCE_EMAIL=ci@example.com formeasy:ci
+          for i in $(seq 30); do curl -fs http://127.0.0.1:8000/api/v1/health && exit 0; sleep 2; done
+          docker logs fe; exit 1
+      - name: Compose file is valid
+        run: cd deploy && cp .env.example .env && sed -i 's/^CLOUDFLARE_TUNNEL_TOKEN=$/CLOUDFLARE_TUNNEL_TOKEN=x/' .env && docker compose config -q

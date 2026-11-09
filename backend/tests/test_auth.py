@@ -251,3 +251,15 @@ def test_smtp_sender_sends_the_code(monkeypatch):
     SmtpSender().send("ram@x.in", "654321")
     assert sent["addr"] == ("smtp-relay.example.com", 587) and sent["tls"] and sent["login"] == ("u", "p")
     assert sent["msg"]["To"] == "ram@x.in" and "654321" in sent["msg"]["Subject"]
+
+
+def test_visitor_address_comes_from_the_cloudflare_header_when_configured(hosted, monkeypatch):
+    seen = []
+    real = hosted.auth.request_code
+    monkeypatch.setattr(hosted.auth, "request_code", lambda who, ip: (seen.append(ip), real(who, ip))[1])
+    c = TestClient(hosted.app)
+    c.post("/api/v1/auth/code", json={"phone": PHONE}, headers={"cf-connecting-ip": "203.0.113.7"})
+    assert seen[-1] != "203.0.113.7"  # header ignored unless the server is told it sits behind Cloudflare
+    monkeypatch.setattr(hosted, "_CLIENT_IP_HEADER", "cf-connecting-ip")
+    c.post("/api/v1/auth/code", json={"phone": "98765 43211"}, headers={"cf-connecting-ip": "203.0.113.7"})
+    assert seen[-1] == "203.0.113.7"

@@ -1,0 +1,33 @@
+# FormEasy on one small server, reached only through a Cloudflare Tunnel (no open ports, Cloudflare does HTTPS).
+#   cd deploy && cp .env.example .env   (fill it in)   &&   docker compose up -d --build
+# Full steps: docs/DEPLOYMENT.md section 5.
+services:
+  app:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    image: formeasy:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PDFMASTER_MULTIUSER: "1"
+      PDFMASTER_DATA: /data                       # SQLite database + documents on the server's disk
+      PDFMASTER_STORAGE: ${PDFMASTER_STORAGE:-local}
+      PDFMASTER_LOG_DIR: /data/logs               # 180-day access logs survive restarts
+      PDFMASTER_CLIENT_IP_HEADER: cf-connecting-ip   # safe: the app is reachable only through the tunnel
+    volumes:
+      - formeasy-data:/data
+    # no "ports:" on purpose - only the tunnel below can reach the app
+    logging: {driver: local, options: {max-size: "20m", max-file: "5"}}
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in deploy/.env}
+    depends_on: [app]
+    logging: {driver: local, options: {max-size: "5m", max-file: "3"}}
+
+volumes:
+  formeasy-data:

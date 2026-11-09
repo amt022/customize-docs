@@ -15,13 +15,13 @@ public website where many people use one server.
 | Start-up safety checks | Done, tested |
 | Real email sending (SMTP: Brevo, Resend, SES, Zoho…) | Code written and tested against a fake SMTP server, **not yet tried with a real account** |
 | Real SMS sending (MSG91 / Twilio) | Optional. Code written, **not yet tried with a real account** |
-| Docker image (`backend/Dockerfile`) | Written, **never built** (no Docker on the dev machine) |
+| Docker image (`backend/Dockerfile`) | Written; built and health-checked by GitHub Actions (`.github/workflows/docker.yml`) on push, **not yet run there** |
+| One-server deploy with Cloudflare Tunnel (`deploy/`) | Written (section 5), **not yet run on a real server** |
 | Security headers (nosniff, no framing, HSTS over https), Docker HEALTHCHECK, `.dockerignore` | Done |
 | Legal basics: Privacy Policy + Terms pages, consent checkbox at sign-in (version stored per user), grievance contact in the footer, forgery warning, 180-day access log | Done, tested. **Wording not yet checked by a lawyer** (section 4) |
 | Load testing | Light test done on a dev PC (`backend/loadtest.py`: 40 people uploading and rendering at once, 0 errors, renders under 0.5 s). OCR-heavy and real-server (S3 + PostgreSQL) load not tested. Estimate: 20–40 people editing at once per 2-core server, 2 OCR jobs at a time per process |
 
-Next steps, in order: email provider (section 2) → build the Docker image → database + bucket → deploy behind HTTPS →
-load test.
+Next steps, in order: email provider (section 2) → server + Cloudflare Tunnel (section 5) → load test.
 
 ## 1. Try hosted mode on your own PC
 
@@ -211,3 +211,39 @@ Still your job before launch:
 - Fill in the operator / grievance settings and get the legal pages reviewed (section 3b).
 - Re-run `python loadtest.py https://your-site 40` against the real deployment (S3 + PostgreSQL) before launch.
 - Optional: Google sign-in; moving OCR to a separate job queue so long OCR jobs do not slow editing.
+
+## 5. Go live on one server with Cloudflare (cheapest setup, about ₹400–550 / month)
+
+Everything is in `deploy/`: `docker-compose.yml` runs the app plus a **Cloudflare Tunnel**, so the server opens no
+web ports, Cloudflare provides HTTPS / CDN / DDoS protection for free, and visitors' real IPs reach the rate limits
+and access log (`PDFMASTER_CLIENT_IP_HEADER=cf-connecting-ip`). Database (SQLite) and documents live on the server's
+disk in the `formeasy-data` volume, backed up nightly. No PostgreSQL or bucket needed at this size.
+
+1. **Server.** Buy an Ubuntu 24.04 VPS with 2 CPUs / 4 GB RAM (Hetzner CX22 about €4–5, Hetzner Singapore is closest
+   to India; or DigitalOcean / AWS Lightsail in Mumbai / Bangalore; Oracle Cloud "Always Free" ARM in Mumbai is
+   free). Add your SSH key when creating it.
+2. **Domain on Cloudflare.** Free Cloudflare account → *Add a domain* → change the nameservers at your registrar
+   to the two Cloudflare gives you. (Buy a domain from Cloudflare Registrar if you have none.)
+3. **Tunnel.** Cloudflare dashboard → *Zero Trust* → *Networks* → *Tunnels* → *Create a tunnel* → *Cloudflared* →
+   name it `formeasy` → copy the **token** (the long string after `--token`). Skip the install step.
+   Then *Public hostname*: subdomain empty or `www`, your domain, service **HTTP** `app:8000`.
+4. **Install.** SSH into the server as root:
+   ```bash
+   git clone https://github.com/amt022/customize-docs.git /opt/formeasy
+   bash /opt/formeasy/deploy/setup.sh          # installs Docker, swap, firewall, creates deploy/.env
+   nano /opt/formeasy/deploy/.env              # tunnel token, operator + grievance details, SMTP (section 2)
+   bash /opt/formeasy/deploy/setup.sh          # builds and starts; prints "health 200"
+   ```
+   (Private GitHub repo: clone with a personal access token, `https://<token>@github.com/...`.)
+5. **Cloudflare settings** for the domain: *SSL/TLS* → Full; *SSL/TLS → Edge Certificates* → Always Use HTTPS on;
+   Uploads above 100 MB are
+   blocked by Cloudflare's free plan, so set `PDFMASTER_MAX_UPLOAD_MB=95` in `.env`.
+6. **Check:** open the site, upload a PDF, sign in with your own email, look at `docker compose logs app` and
+   `/var/lib/docker/volumes/deploy_formeasy-data/_data/logs`.
+
+Day to day (in `/opt/formeasy/deploy`): `bash update.sh` after pushing new code; `docker compose logs -f app`;
+backups in `/var/backups/formeasy` (7 days, copy them off the server now and then). The GitHub workflow
+`.github/workflows/docker.yml` builds the image and checks `/health` on every push.
+
+Growing later: move documents to Cloudflare R2 (`PDFMASTER_STORAGE=s3` lines in `.env.example`, 10 GB free) and the
+database to Neon / Supabase PostgreSQL, then run several servers behind the same tunnel.

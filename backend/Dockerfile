@@ -21,7 +21,7 @@ ENV PDFMASTER_DATA=/tmp/formeasy \
     PDFMASTER_STORAGE=s3 \
     PDFMASTER_EMAIL=smtp \
     PDFMASTER_CORS=""
-RUN useradd -m formeasy
+RUN useradd -m formeasy && mkdir -p /data && chown formeasy /data   # /data = persistent volume on a single server
 USER formeasy
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s   CMD python -c "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=4)" || exit 1

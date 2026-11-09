@@ -122,6 +122,21 @@ async def _security_headers(request: Request, call_next):
     return response
 
 
+# Behind Cloudflare (tunnel or proxy) every request arrives from Cloudflare; the visitor's address is in a header
+# Cloudflare overwrites (cf-connecting-ip), so rate limits and the access log see the real visitor. Set only when the
+# server cannot be reached except through that proxy, or anyone could fake the header.
+_CLIENT_IP_HEADER = os.environ.get("PDFMASTER_CLIENT_IP_HEADER", "").strip().lower()
+
+
+@app.middleware("http")  # added last = runs first, before the session and logging middlewares
+async def _real_client(request: Request, call_next):
+    if _CLIENT_IP_HEADER:
+        ip = request.headers.get(_CLIENT_IP_HEADER, "").split(",")[0].strip()
+        if ip:
+            request.scope["client"] = (ip, 0)
+    return await call_next(request)
+
+
 def _valid_sid(sid: str) -> bool:
     return len(sid) == 43 and sid.replace("-", "").replace("_", "").isalnum()
 
