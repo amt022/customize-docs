@@ -62,7 +62,9 @@ class S3Store:
                                   region_name=os.environ.get("PDFMASTER_S3_REGION") or None)
         self.s3, self.bucket = client, bucket
         self.prefix = prefix.strip("/") + "/" if prefix.strip("/") else ""
-        self.sse = os.environ.get("PDFMASTER_S3_SSE", "AES256")  # "" for providers that reject the header
+        self.sse = os.environ.get("PDFMASTER_S3_SSE", "AES256")  # "" or "none" for providers that reject the header
+        if self.sse.strip().lower() in ("none", "off", "0"):
+            self.sse = ""
         self._cache: OrderedDict[str, bytes] = OrderedDict()  # immutable PDF versions only
         self._cache_size, self._cache_max = 0, cache_bytes
         self._lock = threading.Lock()

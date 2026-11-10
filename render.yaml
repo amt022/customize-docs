@@ -1,0 +1,72 @@
+# Render Blueprint for the hosted FormEasy website (docs/DEPLOYMENT.md section 6).
+# Render dashboard > New > Blueprint > pick this repository. Values marked sync: false are asked for once.
+# The free plan's disk is wiped on every restart, so documents go to Cloudflare R2 and the database to Neon.
+services:
+  - type: web
+    name: formeasy
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: free                      # 512 MB, sleeps after 15 min idle; "starter" ($7) stays awake
+    region: singapore               # closest Render region to India
+    healthCheckPath: /api/v1/health
+    autoDeploy: true                # every push to main redeploys
+    envVars:
+      - key: PORT
+        value: "8000"
+      - key: WEB_CONCURRENCY
+        value: "1"                  # one worker fits in 512 MB
+      - key: PDFMASTER_MULTIUSER
+        value: "1"
+      - key: PDFMASTER_SECRET
+        generateValue: true
+      - key: PDFMASTER_MAX_UPLOAD_MB
+        value: "95"                 # Cloudflare's free plan blocks bigger uploads
+      - key: PDFMASTER_RETENTION_HOURS
+        value: "24"
+      - key: PDFMASTER_ACCOUNT_RETENTION_DAYS
+        value: "0"
+      - key: PDFMASTER_TRASH_DAYS
+        value: "30"
+      # --- database: Neon PostgreSQL connection string (postgresql://...?sslmode=require)
+      - key: PDFMASTER_DATABASE_URL
+        sync: false
+      # --- documents: Cloudflare R2
+      - key: PDFMASTER_STORAGE
+        value: s3
+      - key: PDFMASTER_S3_BUCKET
+        value: formeasy-docs
+      - key: PDFMASTER_S3_ENDPOINT
+        sync: false                 # https://<account id>.r2.cloudflarestorage.com
+      - key: PDFMASTER_S3_REGION
+        value: auto
+      - key: PDFMASTER_S3_SSE
+        value: none                 # R2 always encrypts; do not send the AWS SSE header
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      # --- sign-in codes: "console" prints them in the Render log until Brevo is set up, then change to smtp
+      - key: PDFMASTER_EMAIL
+        value: console
+      - key: SMTP_HOST
+        value: smtp-relay.brevo.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        value: FormEasy <no-reply@formeasy.in>
+      # --- who runs the site (Privacy / Terms pages; the server will not start without operator + grievance email)
+      - key: PDFMASTER_OPERATOR
+        sync: false
+      - key: PDFMASTER_GRIEVANCE_NAME
+        sync: false
+      - key: PDFMASTER_GRIEVANCE_EMAIL
+        sync: false
+      - key: PDFMASTER_ADDRESS
+        sync: false
+      - key: PDFMASTER_DATA_REGION
+        value: Singapore (Render) and Cloudflare R2

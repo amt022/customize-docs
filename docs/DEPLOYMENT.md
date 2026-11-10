@@ -262,3 +262,27 @@ Same steps, with an **Oracle Cloud "Always Free"** server instead of a paid one;
   `setup.sh` keeps Oracle's own firewall rules (Oracle warns against ufw); no ingress rule is needed for the tunnel.
 - Oracle may reclaim Always Free servers that stay almost idle for 7 days. Upgrading the account to
   *Pay As You Go* (still ₹0 within the free limits) stops that; set a budget alert at ₹1 to be safe.
+
+## 6. Free on Render (no server to manage)
+
+`render.yaml` (repo root) is a Render Blueprint that builds `backend/Dockerfile`. Render's free web service has
+512 MB, sleeps after 15 minutes without visitors (first visit then takes about a minute) and loses its disk on every
+restart, so documents go to **Cloudflare R2** and the database to **Neon PostgreSQL** (both free tiers).
+
+1. **Neon** (neon.tech, sign in with GitHub): new project `formeasy`, region Singapore. Copy the connection string
+   (`postgresql://…?sslmode=require`).
+2. **Cloudflare R2**: dashboard → R2 Object Storage (needs a payment method on file; 10 GB stays free) → Create bucket
+   `formeasy-docs` (location hint Asia-Pacific). Then *Manage API tokens* → Create token, permission
+   *Object Read & Write*, only that bucket → copy the Access Key ID and Secret Access Key.
+   Endpoint: `https://<Cloudflare account id>.r2.cloudflarestorage.com`.
+3. **Render** (render.com, sign in with GitHub): New → Blueprint → this repository → fill in the asked values
+   (database URL, R2 endpoint + keys, operator / grievance details) → Apply. First build ~10 minutes; check
+   `https://formeasy.onrender.com/api/v1/health`.
+4. **Domain**: Render service → Settings → Custom Domains → add `formeasy.in` and `www.formeasy.in`. In Cloudflare DNS,
+   set both `@` and `www` to CNAME `formeasy.onrender.com`, **DNS only** (grey cloud) until Render shows the
+   certificate as issued; SSL/TLS mode Full.
+5. **Email**: when Brevo is ready, change `PDFMASTER_EMAIL` to `smtp` and fill `SMTP_USER` / `SMTP_PASSWORD` in the
+   Render Environment tab (codes are printed in the Render log while it is `console`).
+
+Limits: access logs live in the container's `/tmp` and are lost on restart (CERT-In asks for 180 days; a paid
+instance with a disk, or the server setup in section 5, keeps them); large OCR jobs may run out of memory on 512 MB.
