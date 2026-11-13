@@ -192,9 +192,9 @@ def _image_xobject(pdf, png: bytes) -> tuple[pikepdf.Stream, int, int]:
         im = Image.open(io.BytesIO(png))
         im.load()
     except Exception as exc:
-        raise EditError(f"Not a usable image: {exc}") from exc
+        raise EditError("This file is not a picture we can read. Use a JPG, PNG, GIF or WebP file.") from exc
     if im.width * im.height > 6000 * 6000:
-        raise EditError("Image is too large")
+        raise EditError("This picture is too large (over 36 megapixels). Make it smaller and try again.")
     if im.format == "JPEG" and im.mode in ("RGB", "L"):
         oriented = ImageOps.exif_transpose(im)
         data = png

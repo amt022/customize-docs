@@ -1,31 +1,63 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type SessionInfo } from "../api";
+import { getLang, setLang, t, useLang } from "../i18n";
 import type { DocumentInfo } from "../types";
 import Account from "./Account";
+import Checklist, { CHECKLIST_GROUPS } from "./Checklist";
 import Dialog from "./Dialog";
+import type { StartAction } from "./Editor";
 import { SiteFooter } from "./Legal";
 import ImageEditor from "./ImageEditor";
 import Logo from "./Logo";
 import ThemeToggle from "./ThemeToggle";
 
-export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | "images") => void }) {
-  type Tab = "home" | "photo" | "pdf";
+type Tab = "home" | "photo" | "pdf" | "checklist";
+/** Which hub quick tool a PDF picker was opened for. */
+type Quick = "edit" | "images" | "compress" | "split" | "tojpg" | "merge";
+
+const POPULAR: [label: string, group: string][] = [
+  ["SSC CGL / CHSL", "SSC (CGL, CHSL, MTS, GD)"],
+  ["UPSC CSE", "UPSC (CSE, NDA, CDS)"],
+  ["IBPS PO / Clerk", "IBPS / SBI / RBI (bank exams)"],
+  ["SBI PO", "IBPS / SBI / RBI (bank exams)"],
+  ["NEET UG", "NTA (NEET, JEE Main, CUET)"],
+  ["JEE Main", "NTA (NEET, JEE Main, CUET)"],
+  ["CUET UG", "NTA (NEET, JEE Main, CUET)"],
+  ["RRB NTPC", "Railways (RRB NTPC, Group D)"],
+  ["PAN card", "PAN card (NSDL / UTIITSL)"],
+];
+
+export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | "images", action?: StartAction) => void }) {
+  useLang();
   const [tab, setTab] = useState<Tab>(() => {
     const t = sessionStorage.getItem("homeTab");
-    return t === "photo" || t === "pdf" ? t : "home";
+    return t === "photo" || t === "pdf" || t === "checklist" ? t : "home";
   });
   const go = (id: Tab) => {
     setTab(id);
+    setError(null);
     try { sessionStorage.setItem("homeTab", id); } catch { /* storage unavailable */ }
+    window.scrollTo({ top: 0 });
   };
+  const [group, setGroup] = useState<string>(() => {
+    const g = (() => { try { return localStorage.getItem("formeasy.exam"); } catch { return null; } })();
+    return g && CHECKLIST_GROUPS.includes(g) ? g : CHECKLIST_GROUPS[0];
+  });
+  const chooseGroup = (g: string) => {
+    setGroup(g);
+    try { localStorage.setItem("formeasy.exam", g); } catch { /* storage unavailable */ }
+  };
+  const [photoPreset, setPhotoPreset] = useState<{ name: string; n: number } | null>(null);
   const [docs, setDocs] = useState<DocumentInfo[]>([]);
   const [drag, setDrag] = useState(false);
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [pending, setPending] = useState<File | null>(null);
+  const [pending, setPending] = useState<{ file: File; quick: Quick } | null>(null);
   const [password, setPassword] = useState("");
   const input = useRef<HTMLInputElement>(null);
-  const imagePdf = useRef<HTMLInputElement>(null);
+  const quickPdf = useRef<HTMLInputElement>(null);
+  const quickFor = useRef<Quick>("edit");
+  const mergeInput = useRef<HTMLInputElement>(null);
   const pictures = useRef<HTMLInputElement>(null);
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [signInHint, setSignInHint] = useState(false);
@@ -69,26 +101,54 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
     refresh();
   };
 
-  const upload = async (file: File, pw = "", tool: "edit" | "images" = "edit") => {
-    setBusy(true);
+  const openFor = (id: string, quick: Quick) =>
+    quick === "images" ? onOpen(id, "images") : onOpen(id, "edit", quick === "edit" || quick === "merge" ? undefined : quick);
+
+  const upload = async (file: File, pw = "", quick: Quick = "edit") => {
+    if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") {
+      // a photo dropped on a PDF tool: send it where it belongs instead of a server error
+      if (file.type.startsWith("image/")) return makeFromPictures([file]);
+      setError(t("Only PDF files work here. For photos use “JPG to PDF”; save Word files as PDF first."));
+      return;
+    }
+    setBusy(t("Opening…"));
     setError(null);
     try {
       const doc = await api.upload(file, pw);
-      onOpen(doc.id, tool);
+      setPending(null);
+      openFor(doc.id, quick);
     } catch (e) {
       if (e instanceof ApiError && e.status === 401) {
-        setPending(file);
-        setError(pw ? "Wrong password" : "This PDF is password protected");
+        setPending({ file, quick });
+        setError(pw ? t("Wrong password") : t("This PDF is password protected"));
       } else {
         setError((e as Error).message);
       }
     } finally {
-      setBusy(false);
+      setBusy(null);
+    }
+  };
+
+  const merge = async (files: File[]) => {
+    const pdfs = files.filter((f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf");
+    if (pdfs.length !== files.length || !pdfs.length) { setError(t("Only PDF files work here. For photos use “JPG to PDF”; save Word files as PDF first.")); return; }
+    if (pdfs.length === 1) return upload(pdfs[0]);
+    setBusy(t("Merging {n} files…", { n: pdfs.length }));
+    setError(null);
+    try {
+      let doc = await api.upload(pdfs[0]);
+      for (const f of pdfs.slice(1)) doc = await api.merge(doc.id, f, doc.page_count, doc.current_version);
+      onOpen(doc.id);
+    } catch (e) {
+      setError((e as Error).message);
+      refresh();
+    } finally {
+      setBusy(null);
     }
   };
 
   const makeFromPictures = async (files: File[]) => {
-    setBusy(true);
+    setBusy(t("Opening…"));
     setError(null);
     try {
       const doc = await api.fromImages(files);
@@ -96,61 +156,140 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
     } catch (e) {
       setError((e as Error).message);
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   };
 
+  const pickPdf = (quick: Quick) => {
+    quickFor.current = quick;
+    if (quick === "merge") mergeInput.current?.click();
+    else quickPdf.current?.click();
+  };
+
+  const QUICK: [icon: string, name: string, hint: string, run: () => void][] = [
+    ["🗜", "Compress PDF", "Under 100 KB, 200 KB, 500 KB…", () => pickPdf("compress")],
+    ["🖼", "JPG to PDF", "Photos or scans into one PDF", () => pictures.current?.click()],
+    ["➕", "Merge PDFs", "Join several files into one", () => pickPdf("merge")],
+    ["✂", "Split PDF", "Take out the pages you need", () => pickPdf("split")],
+    ["📸", "PDF to JPG", "Each page as a picture", () => pickPdf("tojpg")],
+    ["✏️", "Edit PDF text", "Fix a name, date or figure", () => pickPdf("edit")],
+    ["🪪", "Resize photo", "Exact pixels, cm and KB", () => go("photo")],
+  ];
+
+  const hidden = (
+    <>
+      <input ref={quickPdf} type="file" accept="application/pdf,.pdf" hidden
+        onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) upload(f, "", quickFor.current); }} />
+      <input ref={mergeInput} type="file" accept="application/pdf,.pdf" multiple hidden
+        onChange={(e) => { const f = Array.from(e.target.files ?? []); e.target.value = ""; if (f.length) merge(f); }} />
+      <input ref={pictures} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden
+        onChange={(e) => { const f = Array.from(e.target.files ?? []); e.target.value = ""; if (f.length) makeFromPictures(f); }} />
+    </>
+  );
+
+  const feedback = (
+    <>
+      {busy && <div className="toast ok busy-toast" role="status">⏳ {busy}</div>}
+      {pending && (
+        <form className="pw" onSubmit={(e) => { e.preventDefault(); upload(pending.file, password, pending.quick); }}>
+          <input type="password" placeholder={t("PDF password")} value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
+          <button className="btn primary" type="submit">{t("Unlock")}</button>
+        </form>
+      )}
+      {error && <div className="error-banner" role="alert" onClick={() => setError(null)}>{t(error)}</div>}
+    </>
+  );
+
+  const hi = getLang() === "hi";
   return (
     <div className="home">
       <header className="home-head">
         <button className="brand brand-link" onClick={() => go("home")}><Logo size={34} /> <span className="wordmark">Form<b>Easy</b></span></button>
         <nav className="home-tabs" role="tablist">
-          {([["home", "🏠 Home"], ["photo", "🪪 Photo & Signature"], ["pdf", "📄 PDF Studio"]] as const).map(([id, label]) => (
-            <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => go(id)}>{label}</button>
+          {([["home", "🏠 Home"], ["photo", "🪪 Photo & Signature"], ["pdf", "📄 PDF Studio"], ["checklist", "📋 Checklist"]] as const).map(([id, label]) => (
+            <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => go(id)}>{t(label)}</button>
           ))}
         </nav>
         {session && <Account session={session} onChange={changeSession} openSignIn={signInHint} onSignInShown={() => setSignInHint(false)} />}
+        <button className="lang-toggle" onClick={() => setLang(hi ? "en" : "hi")} title={hi ? "Switch to English" : "हिंदी में देखें"} aria-label={hi ? "Switch to English" : "हिंदी में देखें"}>
+          {hi ? "EN" : "हिं"}
+        </button>
         <ThemeToggle />
       </header>
+      {hidden}
       {tab === "home" ? (
         <main className="home-main hub">
-          <h1>Get every application requirement ready</h1>
-          <p className="lede">Photos, signatures and documents for government exams, jobs and admissions: made to the exact size, format and file limits, and checked before you upload.</p>
+          <h1>{t("Get every application requirement ready")}</h1>
+          <p className="lede">{t("Photos, signatures and documents for government exams, jobs and admissions: made to the exact size, format and file limits, and checked before you upload.")}</p>
           <ul className="hub-chips">
-            <li>Exact pixels and KB</li><li>JPG · PNG · WebP · PDF</li><li>Runs in your browser</li><li>Free, no sign-up</li>
+            {["Exact pixels and KB", "JPG · PNG · WebP · PDF", "Runs in your browser", "Free, no sign-up"].map((c) => <li key={c}>{t(c)}</li>)}
           </ul>
+          {feedback}
           <div className="hub-grid">
             <button className="hub-card" onClick={() => go("photo")}>
               <span className="hub-icon">🪪</span>
-              <strong>Photo &amp; Signature</strong>
-              <span className="muted small">Resize and crop to exact dimensions, set a file size in KB, convert format, remove the background and check against the limits.</span>
-              <span className="hub-go">Open <i>→</i></span>
+              <strong>{t("Photo & Signature")}</strong>
+              <span className="muted small">{t("Resize and crop to exact dimensions, set a file size in KB, convert format, remove the background and check against the limits.")}</span>
+              <span className="hub-go">{t("Open")} <i>→</i></span>
             </button>
             <button className="hub-card" onClick={() => go("pdf")}>
               <span className="hub-icon">📄</span>
-              <strong>PDF Studio</strong>
-              <span className="muted small">Edit text and pictures in certificates and forms, compress to a size limit, merge, split, and run a document check.</span>
-              <span className="hub-go">Open <i>→</i></span>
+              <strong>{t("PDF Studio")}</strong>
+              <span className="muted small">{t("Edit text and pictures in certificates and forms, compress to a size limit, merge, split, and run a document check.")}</span>
+              <span className="hub-go">{t("Open")} <i>→</i></span>
             </button>
-            {[
-              ["🔍", "Document Scanner", "Scan certificates with a camera and clean them up."],
-              ["🗂", "Document Vault", "Keep certificates, marksheets and IDs in one place."],
-              ["📋", "Exam Checklist", "See which photo, signature and documents an exam needs."],
-              ["⏰", "Tracker & Reminders", "Track applications and deadlines."],
-            ].map(([icon, name, text]) => (
-              <div key={name} className="hub-card soon" aria-disabled="true">
-                <span className="hub-icon">{icon}</span>
-                <strong>{name} <span className="soon-tag">Coming soon</span></strong>
-                <span className="muted small">{text}</span>
-              </div>
-            ))}
+            <button className="hub-card live" onClick={() => go("checklist")}>
+              <span className="hub-icon">📋</span>
+              <strong>{t("Exam Checklist")}</strong>
+              <span className="muted small">{t("Pick your exam and tick off the photo, signature and documents it asks for.")}</span>
+              <span className="hub-go">{t("Open")} <i>→</i></span>
+            </button>
           </div>
-          <p className="muted small">Every exam sets its own limits. Always copy them from the official notification; the examples in the tools are only examples.</p>
+
+          <section className="hub-section">
+            <h2>{t("Quick PDF tools")}</h2>
+            <p className="muted">{t("One click: choose your file and get the result.")}</p>
+            <div className="quick-grid">
+              {QUICK.map(([icon, name, hint, run]) => (
+                <button key={name} className="quick-tool" disabled={!!busy} onClick={run}>
+                  <span className="qt-icon">{icon}</span>
+                  <span><strong>{t(name)}</strong><span className="muted">{t(hint)}</span></span>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="hub-section">
+            <h2>{t("Popular exams")}</h2>
+            <div className="exam-pills">
+              {POPULAR.map(([label, g]) => (
+                <button key={label} className="exam-pill" onClick={() => { chooseGroup(g); go("checklist"); }}>{label}</button>
+              ))}
+            </div>
+          </section>
+
+          <section className="hub-section">
+            <h2>{t("How it works")}</h2>
+            <ol className="steps">
+              <li><strong>{t("Choose your exam")}</strong><span className="muted">{t("We load its photo, signature and file-size rules.")}</span></li>
+              <li><strong>{t("Upload your photo or PDF")}</strong><span className="muted">{t("From your phone camera, gallery or computer.")}</span></li>
+              <li><strong>{t("Download, ready to upload")}</strong><span className="muted">{t("Right size, right KB, checked against the rules.")}</span></li>
+            </ol>
+          </section>
+
+          <p className="muted small hub-disclaimer">{t("Every exam sets its own limits. Always copy them from the official notification; the examples in the tools are only examples.")}</p>
         </main>
-      ) : tab === "photo" ? <main className="home-wide"><ImageEditor /></main> : (
+      ) : tab === "checklist" ? (
+        <>
+          <Checklist group={group} onGroup={chooseGroup}
+            onPhoto={(name) => { setPhotoPreset({ name, n: Date.now() }); go("photo"); }}
+            onCompress={() => pickPdf("compress")} onScan={() => pictures.current?.click()} />
+          <div className="home-main" style={{ marginTop: 0 }}>{feedback}</div>
+        </>
+      ) : tab === "photo" ? <main className="home-wide"><ImageEditor key={photoPreset?.n} preset={photoPreset?.name} /></main> : (
       <main className="home-main">
-        <h1>Edit PDF text exactly where it is</h1>
-        <p className="lede">Change a word, a figure or a name. The original font, size, colour and position are kept, and every edit is checked against the original page.</p>
+        <h1>{t("Edit PDF text exactly where it is")}</h1>
+        <p className="lede">{t("Change a word, a figure or a name. The original font, size, colour and position are kept, and every edit is checked against the original page.")}</p>
         <div
           className={"drop" + (drag ? " over" : "")}
           onDragOver={(e) => { e.preventDefault(); setDrag(true); }}
@@ -158,45 +297,39 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
           onDrop={(e) => {
             e.preventDefault();
             setDrag(false);
-            const f = e.dataTransfer.files[0];
-            if (f) upload(f);
+            const files = Array.from(e.dataTransfer.files);
+            if (files.length > 1) merge(files);
+            else if (files[0]) upload(files[0]);
           }}
           onClick={() => input.current?.click()}
         >
-          <input ref={input} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+          <input ref={input} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) upload(f); }} />
           <div className="drop-icon">⬆</div>
-          <div>{busy ? "Opening…" : "Drop a PDF here or click to choose"}</div>
+          <div>{busy ?? t("Drop a PDF here or click to choose")}</div>
           <div className="muted small">
-            Up to {session?.maxUploadMb ?? 200} MB · {session?.multiUser ? "only you can see your files" : "stays on this computer"}
+            {t("Up to {mb} MB", { mb: session?.maxUploadMb ?? 200 })} · {session?.multiUser ? t("only you can see your files") : t("stays on this computer")}
           </div>
         </div>
         {session?.multiUser && <KeepNote session={session} onSignIn={() => setSignInHint(true)} />}
-        {pending && (
-          <form className="pw" onSubmit={(e) => { e.preventDefault(); upload(pending, password); }}>
-            <input type="password" placeholder="PDF password" value={password} onChange={(e) => setPassword(e.target.value)} autoFocus />
-            <button className="btn primary" type="submit">Unlock</button>
-          </form>
-        )}
-        {error && <div className="error-banner">{error}</div>}
+        {feedback}
         <section className="home-images">
-          <h2>🖼 Images</h2>
-          <p className="muted">Resize, move, rotate or replace the pictures in a PDF, or build a new PDF from your own pictures.</p>
-          <div className="home-cards">
-            <button className="home-card" disabled={busy} onClick={() => imagePdf.current?.click()}>
-              <strong>Edit pictures in a PDF</strong>
-              <span className="muted small">Open a PDF straight in the Images tool: drag handles to resize, set exact sizes, insert more pictures.</span>
-            </button>
-            <button className="home-card" disabled={busy} onClick={() => pictures.current?.click()}>
-              <strong>Make a PDF from pictures</strong>
-              <span className="muted small">Choose JPG, PNG, GIF or WebP files. Each becomes a page, which you can then resize and rearrange.</span>
+          <h2>🛠 {t("Quick PDF tools")}</h2>
+          <div className="quick-grid">
+            {QUICK.filter(([, name]) => name !== "Edit PDF text" && name !== "Resize photo").map(([icon, name, hint, run]) => (
+              <button key={name} className="quick-tool" disabled={!!busy} onClick={run}>
+                <span className="qt-icon">{icon}</span>
+                <span><strong>{t(name)}</strong><span className="muted">{t(hint)}</span></span>
+              </button>
+            ))}
+            <button className="quick-tool" disabled={!!busy} onClick={() => pickPdf("images")}>
+              <span className="qt-icon">🖼</span>
+              <span><strong>{hi ? "PDF में फ़ोटो बदलें" : "Edit pictures in a PDF"}</strong><span className="muted">{hi ? "साइज़ बदलें, हटाएँ, नई फ़ोटो जोड़ें" : "Resize, move, replace or insert"}</span></span>
             </button>
           </div>
-          <input ref={imagePdf} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) upload(f, "", "images"); }} />
-          <input ref={pictures} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden onChange={(e) => { const f = Array.from(e.target.files ?? []); e.target.value = ""; if (f.length) makeFromPictures(f); }} />
         </section>
         {docs.length > 0 && (
           <section className="recent">
-            <h2>Recent documents</h2>
+            <h2>{t("Recent documents")}</h2>
             <ul>
               {docs.map((d) => (
                 <li key={d.id}>

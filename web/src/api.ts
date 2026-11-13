@@ -10,11 +10,32 @@ export class ApiError extends Error {
   }
 }
 
+/** What to tell a person when the server gave no message of its own (or could not be reached). */
+export function fallbackMessage(status: number): string {
+  if (status === 0) return "Can't reach FormEasy. Check your internet connection and try again.";
+  if (status === 413) return "This file is too big to upload. Compress it or split it into parts first.";
+  if (status === 429) return "Too many tries in a short time. Wait a minute and try again.";
+  if (status === 404) return "This document is no longer here. It may have been deleted or expired; upload it again.";
+  if (status >= 500) return "Something went wrong on our side. Please try again in a moment.";
+  return `Something went wrong (error ${status}). Please try again.`;
+}
+
+/** fetch() that turns "no connection" into an ApiError with status 0 instead of a bare TypeError. */
+export async function request(url: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw e;
+    throw new ApiError(fallbackMessage(0), 0);
+  }
+}
+
 async function call<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(BASE + path, init);
+  const res = await request(BASE + path, init);
   const body = await res.json().catch(() => null);
   if (!res.ok || !body?.success) {
-    throw new ApiError(body?.message ?? `Request failed (${res.status})`, res.status, body);
+    // a proxy's HTML error page (502/504 while the server restarts) has no message
+    throw new ApiError(body?.message ?? fallbackMessage(res.status), res.status, body);
   }
   return body.data as T;
 }
@@ -113,25 +134,26 @@ export const api = {
   // export with optional password protection; returns a Blob to save
   compressionOptions: (id: string) => call<Record<CompressionLevel, CompressionStats>>(`/documents/${id}/compression`),
   exportPdf: async (id: string, body: ExportOptions) => {
-    const res = await fetch(`${BASE}/documents/${id}/export`, json(body));
+    const res = await request(`${BASE}/documents/${id}/export`, json(body));
     if (!res.ok) {
       const b = await res.json().catch(() => null);
-      throw new ApiError(b?.message ?? `Export failed (${res.status})`, res.status, b);
+      throw new ApiError(b?.message ?? fallbackMessage(res.status), res.status, b);
     }
     const cd = res.headers.get("content-disposition") ?? "";
     const m = /filename\*=UTF-8''([^;]+)/.exec(cd);
     return {
       blob: await res.blob(), name: m ? decodeURIComponent(m[1]) : "document.pdf",
       originalSize: Number(res.headers.get("x-original-size") ?? 0), size: Number(res.headers.get("x-compressed-size") ?? 0),
+      reached: res.headers.get("x-target-reached") !== "0",
     };
   },
 
   convert: async (id: string, format: ConvertFormat, pages: string, dpi: number) => {
     const q = new URLSearchParams({ format, pages, dpi: String(dpi) });
-    const res = await fetch(`${BASE}/documents/${id}/convert?${q}`);
+    const res = await request(`${BASE}/documents/${id}/convert?${q}`);
     if (!res.ok) {
       const b = await res.json().catch(() => null);
-      throw new ApiError(b?.message ?? `Download failed (${res.status})`, res.status, b);
+      throw new ApiError(b?.message ?? fallbackMessage(res.status), res.status, b);
     }
     const cd = res.headers.get("content-disposition") ?? "";
     const m = /filename\*=UTF-8''([^;]+)/.exec(cd);
@@ -241,6 +263,8 @@ export interface ExportOptions {
   allowModify: boolean;
   allowAnnotate: boolean;
   compression: CompressionLevel;
+  /** "PDF under N KB": the gentlest compression that fits; overrides `compression` */
+  targetKb?: number;
 }
 
 export function formatBytes(n: number): string {

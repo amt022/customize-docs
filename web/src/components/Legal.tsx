@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useEffect, useState } from "react";
 import { api, type LegalInfo, type SessionInfo } from "../api";
 import Logo from "./Logo";
@@ -155,8 +156,8 @@ export function SiteFooter({ session }: { session: SessionInfo | null }) {
   const l = session.legal;
   return (
     <footer className="site-footer small">
-      <a href="#privacy">Privacy Policy</a>
-      <a href="#terms">Terms of Use</a>
+      <a href="#privacy">{t("Privacy Policy")}</a>
+      <a href="#terms">{t("Terms of Use")}</a>
       {l?.grievanceEmail && <span>Grievance Officer{l.grievanceName ? `: ${l.grievanceName}` : ""} · <a href={`mailto:${l.grievanceEmail}`}>{l.grievanceEmail}</a></span>}
       <span className="muted">Not affiliated with any government or exam body.</span>
     </footer>

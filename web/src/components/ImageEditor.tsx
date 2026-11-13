@@ -211,7 +211,8 @@ const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v
 const num = (v: string, fallback = 0) => { const n = parseFloat(v); return isFinite(n) ? n : fallback; };
 
 // ------------------------------------------------------------------ component
-export default function ImageEditor() {
+/** `preset`: a TEMPLATES name to switch the application limits on with (from the exam checklist). */
+export default function ImageEditor({ preset }: { preset?: string } = {}) {
   const [layers, setLayers] = useState<Layer[]>([]);
   const [art, setArt] = useState<Art>({ w: 1200, h: 800, bg: "#ffffff" });
   const [sel, setSel] = useState<number | null>(null);
@@ -231,8 +232,9 @@ export default function ImageEditor() {
   const [dpi, setDpi] = useState(300);
   const [landscape, setLandscape] = useState(false);
   const [presetFit, setPresetFit] = useState<"fill" | "fit">("fill");
-  const [req, setReq] = useState<Req>(TEMPLATES[0]);
-  const [reqOn, setReqOn] = useState(false);
+  const fromPreset = preset ? TEMPLATES.find((x) => x.name === preset) : undefined;
+  const [req, setReq] = useState<Req>(fromPreset ? { ...fromPreset } : TEMPLATES[0]);
+  const [reqOn, setReqOn] = useState(!!fromPreset);
   const [saved, setSaved] = useState<Req[]>(() => {
     try { return JSON.parse(localStorage.getItem(STORE) ?? "[]"); } catch { return []; }
   });

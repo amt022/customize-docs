@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import mimetypes
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +11,7 @@ from typing import Literal, Optional
 from urllib.parse import quote
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
@@ -20,6 +22,8 @@ from .engine.ocr import OcrUnavailable, tesseract_path
 from .service import Conflict, DocumentService, NotFound, current_owner
 
 logging.getLogger("fontTools").setLevel(logging.ERROR)
+
+mimetypes.add_type("application/manifest+json", ".webmanifest")  # PWA manifest served from the web build
 
 DATA = Path(os.environ.get("PDFMASTER_DATA", Path(__file__).resolve().parents[1] / "data"))
 # Hosted mode: each browser gets its own private set of documents through a session cookie, and can
@@ -209,9 +213,20 @@ async def _http(_: Request, exc: HTTPException):
     return JSONResponse({"success": False, "message": str(exc.detail)}, status_code=exc.status_code)
 
 
+@app.exception_handler(RequestValidationError)
+async def _invalid(_: Request, exc: RequestValidationError):
+    """Same {message} shape as every other error, in words a person can act on."""
+    errs = exc.errors()
+    first = errs[0] if errs else {}
+    field = str(first.get("loc", ["", ""])[-1])
+    msg = f"Please check \u201c{field}\u201d: {first.get('msg', 'invalid value')}" if field else "Some details in the request are not valid"
+    return JSONResponse({"success": False, "message": msg, "field": field}, status_code=422)
+
+
 @app.exception_handler(NotFound)
 async def _nf(_: Request, exc: NotFound):
-    return JSONResponse({"success": False, "message": f"Not found: {exc}"}, status_code=404)
+    return JSONResponse({"success": False, "message": "This document is no longer here. It may have been deleted or expired; upload it again."},
+                        status_code=404)
 
 
 @app.exception_handler(Conflict)
@@ -666,6 +681,7 @@ class ExportIn(BaseModel):
     allowModify: bool = True
     allowAnnotate: bool = True
     compression: Literal["none", "lossless", "balanced", "strong"] = "none"
+    targetKb: Optional[int] = Field(None, ge=10, le=100_000)  # "PDF under N KB": overrides compression
 
 
 @app.get(f"{API}/documents/{{doc_id}}/compression")
@@ -679,12 +695,14 @@ def export(doc_id: str, body: ExportIn):
 
     doc = service.get(doc_id)
     data, stats = service.export(doc_id, Protection(body.userPassword, body.ownerPassword, body.allowPrint,
-                                                    body.allowCopy, body.allowModify, body.allowAnnotate), body.compression)
+                                                    body.allowCopy, body.allowModify, body.allowAnnotate), body.compression,
+                                  body.targetKb)
     stem = doc["original_name"][:-4] if doc["original_name"].lower().endswith(".pdf") else doc["original_name"]
     name = f"{stem}{'-edited' if doc['current_version'] else ''}{'-protected' if body.userPassword or body.ownerPassword else ''}.pdf"
     return Response(data, media_type="application/pdf",
                     headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(name)}",
-                             "X-Original-Size": str(stats["originalSize"]), "X-Compressed-Size": str(stats["size"])})
+                             "X-Original-Size": str(stats["originalSize"]), "X-Compressed-Size": str(stats["size"]),
+                             "X-Target-Reached": "1" if stats["reached"] else "0"})
 
 
 @app.get(f"{API}/documents/{{doc_id}}/convert")

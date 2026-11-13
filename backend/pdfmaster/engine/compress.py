@@ -11,6 +11,9 @@ Levels:
   strong    balanced, but images above 100 dpi, JPEG quality 60, and accessibility tags and
             XMP metadata removed
 
+  target    (compress_to) the gentlest of a ladder of steps that brings the file under a size
+            limit such as "PDF under 200 KB"; the last steps also turn large scans into JPEG
+
 Glyph outlines, text and vector graphics are never altered, so text stays sharp and editable.
 Bilevel scans (CCITT / JBIG2), images with decode arrays or unusual colour spaces are left alone.
 """
@@ -41,12 +44,13 @@ class CompressResult:
     size: int
     images_recompressed: int
     level: str
+    reached: bool = True  # for compress_to: the result fits the size limit
 
     def stats(self) -> dict:
         saved = self.original_size - self.size
         return {"level": self.level, "originalSize": self.original_size, "size": self.size,
                 "saved": saved, "savedPercent": round(100 * saved / self.original_size, 1) if self.original_size else 0.0,
-                "imagesRecompressed": self.images_recompressed}
+                "imagesRecompressed": self.images_recompressed, "reached": self.reached}
 
 
 def compress(data: bytes, level: str = "lossless") -> CompressResult:
@@ -54,15 +58,55 @@ def compress(data: bytes, level: str = "lossless") -> CompressResult:
         return CompressResult(data, len(data), len(data), 0, level)
     if level not in ("lossless", *LEVELS):
         raise ValueError(f"Unknown compression level {level!r}")
+    return _compress(data, level, LEVELS.get(level), strip_structure=level == "strong")
+
+
+# Steps tried by compress_to, gentlest first: (max dpi, JPEG quality, scans to JPEG too).
+# Upload portals usually ask for 100-500 KB; a scanned certificate stays readable down to ~72 dpi.
+TARGET_LADDER = [
+    (150, 75, False),
+    (120, 65, False),
+    (100, 60, False),
+    (150, 70, True),
+    (120, 60, True),
+    (100, 50, True),
+    (85, 45, True),
+    (72, 40, True),
+    (60, 35, True),
+]
+
+
+def compress_to(data: bytes, target_bytes: int) -> CompressResult:
+    """The gentlest compression that makes the file at most `target_bytes`. If no step gets
+    there, the smallest result found, with reached=False."""
+    if len(data) <= target_bytes:
+        return CompressResult(data, len(data), len(data), 0, "target")
+    best = _compress(data, "target", None, strip_structure=False)
+    if best.size <= target_bytes:
+        return best
+    for dpi, quality, scans in TARGET_LADDER:
+        r = _compress(data, "target", (dpi, quality), strip_structure=True, scans_to_jpeg=scans)
+        if r.size < best.size:
+            best = r
+        if r.size <= target_bytes:
+            return r
+        if r.images_recompressed == 0 and scans:
+            break  # no image left to shrink: lower settings would give the same file
+    best.reached = False
+    return best
+
+
+def _compress(data: bytes, level: str, images: tuple[int, int] | None, strip_structure: bool,
+              scans_to_jpeg: bool = False) -> CompressResult:
     pdf = pikepdf.open(io.BytesIO(data))
     n_images = 0
-    if level in LEVELS:
-        n_images = _recompress_images(pdf, *LEVELS[level])
+    if images:
+        n_images = _recompress_images(pdf, *images, scans_to_jpeg=scans_to_jpeg)
     _strip_extras(pdf)
     _merge_substitute_fonts(pdf)
     _type1_to_cff(pdf)
-    _slim_truetype(pdf, drop_hints=level in LEVELS)
-    if level == "strong":
+    _slim_truetype(pdf, drop_hints=images is not None)
+    if strip_structure:
         _strip_structure(pdf)
     _dedupe_streams(pdf)
     try:
@@ -345,21 +389,22 @@ def _placements(pdf: pikepdf.Pdf) -> dict[tuple, tuple[float, float]]:
     return out
 
 
-def _recompress_images(pdf: pikepdf.Pdf, max_dpi: int, quality: int) -> int:
+def _recompress_images(pdf: pikepdf.Pdf, max_dpi: int, quality: int, scans_to_jpeg: bool = False) -> int:
     placed = _placements(pdf)
     done = 0
     for obj in pdf.objects:
         if not isinstance(obj, pikepdf.Stream) or obj.get("/Subtype") != "/Image" or obj.objgen not in placed:
             continue
         try:
-            if _recompress_one(obj, placed[obj.objgen], max_dpi, quality):
+            if _recompress_one(obj, placed[obj.objgen], max_dpi, quality, scans_to_jpeg):
                 done += 1
         except Exception:
             continue  # anything we cannot decode stays exactly as it was
     return done
 
 
-def _recompress_one(xo: pikepdf.Stream, placed_pt: tuple[float, float], max_dpi: int, quality: int) -> bool:
+def _recompress_one(xo: pikepdf.Stream, placed_pt: tuple[float, float], max_dpi: int, quality: int,
+                    scans_to_jpeg: bool = False) -> bool:
     if xo.get("/ImageMask", False) or "/Decode" in xo or "/PMPatch" in xo:
         return False  # stencil masks, inverted decodes and scan-edit patches stay pixel-exact
     if int(xo.get("/BitsPerComponent", 8)) != 8:
@@ -383,7 +428,8 @@ def _recompress_one(xo: pikepdf.Stream, placed_pt: tuple[float, float], max_dpi:
     if scale < 0.95:
         img = img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
     was_jpeg = "/DCTDecode" in names
-    photo = was_jpeg or _is_photo(img)
+    # a size limit beats keeping large grey scans lossless; small line art (logos) stays exact
+    photo = was_jpeg or _is_photo(img) or (scans_to_jpeg and img.width * img.height >= 300 * 300)
     if photo:
         buf = io.BytesIO()
         img.save(buf, "JPEG", quality=quality, optimize=True, progressive=False)

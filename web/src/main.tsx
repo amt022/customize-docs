@@ -1,10 +1,11 @@
 import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import Editor from "./components/Editor";
+import Editor, { type StartAction } from "./components/Editor";
 import Home from "./components/Home";
 import LegalPage from "./components/Legal";
 import "./styles.css";
 import "./polish.css";
+import "./features.css";
 import "./dark.css";
 import { initTheme } from "./theme";
 
@@ -17,18 +18,21 @@ function App() {
   const readPage = () => (location.hash === "#privacy" ? "privacy" : location.hash === "#terms" ? "terms" : null);
   const [tool, setTool] = useState<"edit" | "images">(readTool);
   const [page, setPage] = useState<"privacy" | "terms" | null>(readPage);
+  const [action, setAction] = useState<StartAction | undefined>();
   useEffect(() => {
     const on = () => { setDoc(read()); setTool(readTool()); setPage(readPage()); };
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
-  const open = (id: string | null, startTool: "edit" | "images" = "edit") => {
+  const open = (id: string | null, startTool: "edit" | "images" = "edit", action?: StartAction) => {
+    // the action is a one-shot (open a dialog), so it is passed along but not kept in the address
     location.hash = id ? `doc=${id}${startTool === "images" ? "&tool=images" : ""}` : "";
+    setAction(action);
     setDoc(id);
     setTool(startTool);
   };
   if (page) return <LegalPage kind={page} onBack={() => { location.hash = ""; setPage(null); }} />;
-  return doc ? <Editor key={doc} id={doc} startTool={tool} onClose={() => open(null)} /> : <Home onOpen={open} />;
+  return doc ? <Editor key={doc} id={doc} startTool={tool} startAction={action} onClose={() => open(null)} /> : <Home onOpen={open} />;
 }
 
 createRoot(document.getElementById("root")!).render(

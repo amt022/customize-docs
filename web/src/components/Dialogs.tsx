@@ -39,11 +39,11 @@ const FORMATS: { id: DownloadFormat; label: string; hint: string }[] = [
   { id: "txt", label: "Text", hint: "Plain text only" },
 ];
 
-export function ExportDialog({ docId, pageCount, isScan, wasEncrypted, isSigned, onExport, onConvert, onClose }: {
-  docId: string; pageCount: number; isScan: boolean; wasEncrypted: boolean; isSigned: boolean;
+export function ExportDialog({ docId, pageCount, isScan, wasEncrypted, isSigned, startTarget, startFormat, onExport, onConvert, onClose }: {
+  docId: string; pageCount: number; isScan: boolean; wasEncrypted: boolean; isSigned: boolean; startTarget?: boolean; startFormat?: ConvertFormat;
   onExport: (o: ExportOptions) => void; onConvert: (format: ConvertFormat, pages: string, dpi: number) => void; onClose: () => void;
 }) {
-  const [format, setFormat] = useState<DownloadFormat>("pdf");
+  const [format, setFormat] = useState<DownloadFormat>(startFormat ?? "pdf");
   const [allPages, setAllPages] = useState(true);
   const [pages, setPages] = useState("1");
   const [dpi, setDpi] = useState(150);
@@ -81,7 +81,7 @@ export function ExportDialog({ docId, pageCount, isScan, wasEncrypted, isSigned,
       </Dialog>
     );
   }
-  return <PdfExportDialog docId={docId} wasEncrypted={wasEncrypted} isSigned={isSigned} onExport={onExport} onClose={onClose}
+  return <PdfExportDialog docId={docId} startTarget={startTarget} wasEncrypted={wasEncrypted} isSigned={isSigned} onExport={onExport} onClose={onClose}
     picker={<FormatPicker format={format} setFormat={setFormat} />} />;
 }
 
@@ -100,12 +100,21 @@ function FormatPicker({ format, setFormat }: { format: DownloadFormat; setFormat
   );
 }
 
-function PdfExportDialog({ docId, wasEncrypted, isSigned, onExport, onClose, picker }: {
-  docId: string; wasEncrypted: boolean; isSigned: boolean; onExport: (o: ExportOptions) => void; onClose: () => void; picker: React.ReactNode;
+const TARGETS = [100, 200, 300, 500, 1024, 2048];
+const kbLabel = (kb: number) => (kb >= 1024 && kb % 1024 === 0 ? `${kb / 1024} MB` : `${kb} KB`);
+
+function PdfExportDialog({ docId, wasEncrypted, isSigned, startTarget, onExport, onClose, picker }: {
+  docId: string; wasEncrypted: boolean; isSigned: boolean; startTarget?: boolean;
+  onExport: (o: ExportOptions) => void; onClose: () => void; picker: React.ReactNode;
 }) {
   const [protect, setProtect] = useState(wasEncrypted);
   // a signed, unmodified file must stay byte-identical for its signature to remain valid
-  const [compression, setCompression] = useState<CompressionLevel>(isSigned ? "none" : "lossless");
+  const [compression, setCompression] = useState<CompressionLevel | "target">(startTarget ? "target" : isSigned ? "none" : "lossless");
+  const [targetKb, setTargetKb] = useState(() => {
+    const saved = Number((() => { try { return localStorage.getItem("formeasy.targetKb"); } catch { return null; } })());
+    return saved >= 10 ? saved : 200;
+  });
+  const badTarget = compression === "target" && !(targetKb >= 10 && targetKb <= 100000);
   const [sizes, setSizes] = useState<Record<CompressionLevel, CompressionStats> | null>(null);
   const [sizeError, setSizeError] = useState(false);
   useEffect(() => {
@@ -125,16 +134,42 @@ function PdfExportDialog({ docId, wasEncrypted, isSigned, onExport, onClose, pic
     <Dialog title="Download" onClose={onClose} footer={<>
       <span className="spacer" />
       <button className="btn" onClick={onClose}>Cancel</button>
-      <button className="btn primary" disabled={mismatch || missing}
-        onClick={() => onExport(protect
-          ? { userPassword: pw, ownerPassword: owner, allowPrint, allowCopy, allowModify, allowAnnotate: allowModify, compression }
-          : { userPassword: "", ownerPassword: "", allowPrint: true, allowCopy: true, allowModify: true, allowAnnotate: true, compression })}>
-        Download PDF
+      <button className="btn primary" disabled={mismatch || missing || badTarget}
+        onClick={() => {
+          const level: CompressionLevel = compression === "target" ? "none" : compression;
+          const target = compression === "target" ? { targetKb } : {};
+          if (compression === "target") { try { localStorage.setItem("formeasy.targetKb", String(targetKb)); } catch { /* storage unavailable */ } }
+          onExport(protect
+            ? { userPassword: pw, ownerPassword: owner, allowPrint, allowCopy, allowModify, allowAnnotate: allowModify, compression: level, ...target }
+            : { userPassword: "", ownerPassword: "", allowPrint: true, allowCopy: true, allowModify: true, allowAnnotate: true, compression: level, ...target });
+        }}>
+        {compression === "target" ? `Download under ${kbLabel(targetKb || 0)}` : "Download PDF"}
       </button>
     </>}>
       {picker}
       <fieldset className="compress-options">
         <legend>Compression</legend>
+        <label className={"compress-option target-option" + (compression === "target" ? " selected" : "")}>
+          <input type="radio" name="compression" checked={compression === "target"} onChange={() => setCompression("target")} />
+          <span className="compress-text">
+            <strong>Under a size limit <span className="new-tag">For upload portals</span></strong>
+            <span className="muted small">Use the limit from the application form. We keep as much quality as fits.</span>
+            {compression === "target" && (
+              <span className="target-row">
+                {TARGETS.map((kb) => (
+                  <button type="button" key={kb} className={"size-chip" + (targetKb === kb ? " on" : "")} onClick={() => setTargetKb(kb)}>{kbLabel(kb)}</button>
+                ))}
+                <span className="target-custom">
+                  <input type="number" min={10} max={100000} value={targetKb || ""} aria-label="Size limit in KB"
+                    onChange={(e) => setTargetKb(Math.round(Number(e.target.value)))} /> KB
+                </span>
+              </span>
+            )}
+            {badTarget && <span className="bad-text small">Enter a limit of at least 10 KB.</span>}
+          </span>
+          <span className="compress-size">{sizes && compression === "target" && sizes.none.size <= targetKb * 1024
+            ? <span className="good-text small">Already fits</span> : null}</span>
+        </label>
         {LEVELS.map((l) => {
           const st = sizes?.[l.id];
           const same = sizes ? sameAs(sizes, l.id) : null;

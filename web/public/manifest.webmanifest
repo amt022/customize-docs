@@ -1,0 +1,18 @@
+{
+  "name": "FormEasy – exam photo, signature and PDF tools",
+  "short_name": "FormEasy",
+  "description": "Make photos, signatures and PDFs fit government exam, job and admission form rules: exact size, format and KB.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f1420",
+  "theme_color": "#2459d6",
+  "lang": "en-IN",
+  "categories": ["education", "productivity", "utilities"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

@@ -1,0 +1,95 @@
+/* Applicant features: size-limit download, exam checklist, quick tools, hub sections, language switch.
+   Colours come from the theme tokens only, so light and dark both work without overrides. */
+
+/* ---------- "PDF under N KB" ---------- */
+.new-tag { font-size: 10.5px; font-weight: 700; letter-spacing: .02em; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 1px 7px; margin-left: 6px; vertical-align: 1px; }
+.target-option { align-items: start; }
+.target-option > input { margin-top: 3px; }
+.target-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.size-chip { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.size-chip:hover { border-color: var(--accent); }
+.size-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.target-custom { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--muted); }
+.target-custom input { width: 80px; height: 28px; border: 1px solid var(--line); border-radius: 7px; padding: 0 6px; background: var(--panel); }
+
+/* ---------- hub: quick tools, steps, popular exams ---------- */
+.hub-section { margin: 36px 0 0; text-align: left; }
+.hub-section > h2 { font-size: 18px; margin: 0 0 4px; }
+.hub-section > p.muted { margin: 0 0 14px; }
+.quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(210px, 100%), 1fr)); gap: 10px; }
+@media (max-width: 640px) {
+  .quick-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .quick-tool { flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 12px; }
+}
+.quick-tool { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; text-align: left; transition: border-color .15s, transform .15s, box-shadow .15s; }
+.quick-tool:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--shadow); }
+.quick-tool:disabled { opacity: .6; cursor: progress; }
+.quick-tool .qt-icon { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; font-size: 18px; background: var(--accent-soft); }
+.quick-tool strong { display: block; font-size: 14px; }
+.quick-tool .muted { font-size: 12px; line-height: 1.3; }
+
+.steps { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 12px; counter-reset: step; }
+.steps li { position: relative; padding: 16px 16px 16px 58px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); counter-increment: step; }
+.steps li::before { content: counter(step); position: absolute; left: 16px; top: 16px; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; font-size: 14px; color: #fff; background: linear-gradient(135deg, #3a7bff, #7c3aed); }
+.steps strong { display: block; margin-bottom: 2px; }
+.steps .muted { font-size: 13px; }
+
+.exam-pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.exam-pill { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 7px 14px; font-weight: 600; font-size: 13px; cursor: pointer; transition: border-color .15s, color .15s; }
+.exam-pill:hover { border-color: var(--accent); color: var(--accent); }
+
+/* ---------- exam checklist ---------- */
+.checklist { max-width: 860px; text-align: left; }
+.checklist h1 { margin-bottom: 4px; }
+.cl-picker { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0; }
+.cl-picker button { border: 1px solid var(--line); background: var(--panel); border-radius: 10px; padding: 8px 14px; font-weight: 600; cursor: pointer; }
+.cl-picker button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.cl-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 18px; box-shadow: var(--shadow); }
+.cl-card + .cl-card { margin-top: 14px; }
+.cl-card h2 { font-size: 16px; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
+.cl-card > p.muted { margin: 0 0 12px; font-size: 13px; }
+.cl-items { list-style: none; padding: 0; margin: 0; display: grid; gap: 8px; }
+.cl-item { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.cl-item.done { opacity: .7; }
+.cl-item.done .cl-name { text-decoration: line-through; }
+.cl-item input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--accent); }
+.cl-name { font-weight: 600; }
+.cl-spec { display: block; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; margin-top: 2px; }
+.cl-progress { height: 8px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; margin: 6px 0 0; }
+.cl-progress > span { display: block; height: 100%; background: linear-gradient(90deg, #3a7bff, #7c3aed); transition: width .25s; }
+.cl-note { margin-top: 14px; padding: 10px 14px; border-radius: 10px; background: var(--warn-soft); color: var(--warn); font-size: 13px; }
+@media (max-width: 640px) {
+  .cl-item { grid-template-columns: auto 1fr; }
+  .cl-item > .btn { grid-column: 2; justify-self: start; }
+}
+
+/* ---------- friendlier errors ---------- */
+.error-banner .err-title { display: block; font-weight: 700; }
+.error-banner .err-hint { display: block; font-size: 13px; opacity: .9; margin-top: 2px; }
+
+/* ---------- language switch ---------- */
+.lang-toggle { flex: none; height: 36px; padding: 0 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; font-weight: 700; font-size: 13px; }
+.lang-toggle:hover { border-color: var(--accent); }
+@media (max-width: 640px) { .home-head .lang-toggle { order: 2; } }
+.cl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cl-actions { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 640px) { .cl-item > .cl-actions { grid-column: 2; justify-content: flex-start; } }
+.hub-card.live .hub-icon { background: linear-gradient(135deg, rgba(31, 138, 76, .18), rgba(52, 112, 245, .16)); }
+
+/* ---------- Photo & Signature on phones: exam limits first, then the upload box, then the editing controls ---------- */
+@media (max-width: 900px) {
+  .ie { display: flex; flex-direction: column; gap: 10px; }
+  .ie-body, .ie-side { display: contents; }
+  .ie > .error-banner { order: -3; }
+  .ie-side > .ie-req { order: -2; }
+  .ie-stage { order: -1; }
+  .ie-bar { order: 0; margin-bottom: 0; }
+  .ie-side > * { order: 1; }
+  .ie-side > details { box-shadow: var(--shadow); }
+}
+
+/* ---------- busy toast + hub disclaimer ---------- */
+.busy-toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 50; }
+.hub-disclaimer { margin-top: 32px !important; }
+.home-images .quick-grid { margin-top: 10px; }
+.toast.busy-toast { background: var(--accent); }

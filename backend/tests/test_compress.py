@@ -191,3 +191,66 @@ def test_smallest_removes_tags_and_metadata_only_there():
     assert "/StructTreeRoot" in root_keys(compress(data, "balanced").data)
     keys = root_keys(compress(data, "strong").data)
     assert "/StructTreeRoot" not in keys and "/Metadata" not in keys
+
+
+def scan_pdf() -> bytes:
+    """A grey A4 'scan' at 300 dpi stored losslessly (Flate), like many phone-scanner apps write it."""
+    rng = np.random.default_rng(1)
+    h, w = 3508 // 2, 2480 // 2  # 150 dpi keeps the test quick
+    img = np.full((h, w), 235, np.uint8)
+    img[200:260, 150:1100] = 30  # a line of 'text'
+    img = (img + rng.normal(0, 6, img.shape)).clip(0, 255).astype(np.uint8)
+    pdf = pikepdf.new()
+    xo = pdf.make_stream(zlib.compress(img.tobytes(), 6), Type=pikepdf.Name.XObject, Subtype=pikepdf.Name.Image,
+                         Width=w, Height=h, ColorSpace=pikepdf.Name.DeviceGray, BitsPerComponent=8,
+                         Filter=pikepdf.Name.FlateDecode)
+    page = pdf.add_blank_page(page_size=(595, 842))
+    page.Resources = pikepdf.Dictionary(XObject=pikepdf.Dictionary(Im0=xo))
+    page.Contents = pdf.make_stream(b"q 595 0 0 842 0 0 cm /Im0 Do Q")
+    buf = io.BytesIO()
+    pdf.save(buf)
+    return buf.getvalue()
+
+
+def test_compress_to_fits_a_size_limit_with_the_gentlest_step():
+    from pdfmaster.engine.compress import compress_to
+
+    data = scan_pdf()
+    assert len(data) > 400 * 1024
+    r = compress_to(data, 200 * 1024)
+    assert r.reached and r.size <= 200 * 1024
+    assert len(pikepdf.open(io.BytesIO(r.data)).pages) == 1
+    # a looser limit is met with less loss (bigger file, still under the limit)
+    loose = compress_to(data, 600 * 1024)
+    assert loose.reached and r.size <= loose.size <= 600 * 1024
+    # already small enough: the file comes back untouched
+    same = compress_to(data, len(data))
+    assert same.data == data and same.reached
+
+
+def test_compress_to_reports_when_the_limit_cannot_be_reached():
+    from pdfmaster.engine.compress import compress_to
+
+    data = (FIX / "browser.pdf").read_bytes()  # text only: nothing lossy to give up
+    r = compress_to(data, 10 * 1024) if len(data) > 10 * 1024 else None
+    if r is not None:
+        assert not r.reached and r.size <= len(data)
+        assert [l["text"] for l in extract_page(data, 0)["lines"]] == [l["text"] for l in extract_page(r.data, 0)["lines"]]
+
+
+def test_export_with_target_kb(tmp_path, monkeypatch):
+    import importlib
+
+    from fastapi.testclient import TestClient
+
+    monkeypatch.setenv("PDFMASTER_DATA", str(tmp_path))
+    import pdfmaster.api as api
+
+    importlib.reload(api)
+    client = TestClient(api.app)
+    doc = client.post("/api/v1/documents", files={"file": ("scan.pdf", scan_pdf(), "application/pdf")}).json()["data"]
+    r = client.post(f"/api/v1/documents/{doc['id']}/export", json={"targetKb": 200})
+    assert r.status_code == 200
+    assert r.headers["x-target-reached"] == "1"
+    assert len(r.content) <= 200 * 1024
+    assert client.post(f"/api/v1/documents/{doc['id']}/export", json={"targetKb": 1}).status_code == 422

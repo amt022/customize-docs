@@ -3,7 +3,8 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#f1f3f8" />
+    <meta name="theme-color" content="#f1f3f8" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0f1420" media="(prefers-color-scheme: dark)" />
     <script>
       // apply the saved or system theme before first paint so there is no light flash
       (function () {
@@ -13,11 +14,34 @@
         document.documentElement.dataset.theme = dark ? "dark" : "light";
       })();
     </script>
-    <title>FormEasy</title>
+    <title>FormEasy – Exam photo, signature &amp; PDF tools (exact size and KB)</title>
+    <meta name="description" content="Resize photos and signatures to the exact pixels and KB, compress PDFs under 100/200/500 KB, merge, split and edit PDFs, and see the document checklist for SSC, UPSC, IBPS, NEET, JEE and RRB forms. Free, no sign-up." />
+    <link rel="canonical" href="https://formeasy.in/" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="FormEasy" />
+    <meta property="og:locale" content="en_IN" />
+    <meta property="og:url" content="https://formeasy.in/" />
+    <meta property="og:title" content="FormEasy – Exam photo, signature &amp; PDF tools" />
+    <meta property="og:description" content="Exact size and KB for SSC, UPSC, IBPS, NEET, JEE, RRB forms: photo and signature resize, PDF under 200 KB, exam document checklist. Free." />
+    <meta property="og:image" content="https://formeasy.in/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="FormEasy: exam photo, signature and PDF tools" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <script type="application/ld+json">
+      {"@context": "https://schema.org", "@type": "WebApplication", "name": "FormEasy", "url": "https://formeasy.in/",
+       "applicationCategory": "UtilitiesApplication", "operatingSystem": "Any", "inLanguage": ["en-IN", "hi-IN"],
+       "description": "Photo, signature and PDF tools for Indian government exam, job and admission forms.",
+       "offers": {"@type": "Offer", "price": "0", "priceCurrency": "INR"}}
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>FormEasy resizes exam photos and signatures to the exact size and KB and compresses PDFs for upload portals. Please turn on JavaScript to use it.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

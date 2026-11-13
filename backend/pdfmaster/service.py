@@ -137,13 +137,13 @@ class DocumentService:
         if len(data) > MAX_UPLOAD:
             raise ValueError(f"File is larger than {MAX_UPLOAD // (1024 * 1024)} MB")
         if not data.lstrip()[:5].startswith(b"%PDF"):
-            raise ValueError("Not a PDF file")
+            raise ValueError("This file is not a PDF. Choose a .pdf file, or use \u201cMake a PDF from pictures\u201d for photos and scans.")
         try:
             pdf = open_pdf(data, password)
         except Exception as exc:
             if "password" in str(exc).lower():
                 raise PermissionError("PDF is password protected") from exc
-            raise ValueError(f"Cannot read PDF: {exc}") from exc
+            raise ValueError("This PDF is damaged and cannot be opened. Download it again, or print it to a new PDF and upload that.") from exc
         encrypted = pdf.is_encrypted
         if encrypted:
             data = save_pdf(pdf)  # keep a decrypted working copy
@@ -635,11 +635,16 @@ class DocumentService:
             return [self.create(f"{stem}-p{p + 1}.pdf", page_ops.extract(data, [p])) for p in pages0]
         return [self.create(f"{stem}-pages-{spec.replace(' ', '')}.pdf", page_ops.extract(data, pages0))]
 
-    def export(self, doc_id: str, protection: Protection, compression: str = "none") -> tuple[bytes, dict]:
-        """Download copy: compressed first (encryption makes data incompressible), then protected."""
-        from .engine.compress import compress
+    def export(self, doc_id: str, protection: Protection, compression: str = "none",
+               target_kb: Optional[int] = None) -> tuple[bytes, dict]:
+        """Download copy: compressed first (encryption makes data incompressible), then protected.
+        With target_kb, the gentlest compression that fits the limit (1 KB = 1024 bytes, as portals count)."""
+        from .engine.compress import compress, compress_to
 
-        result = compress(self.data(doc_id), compression)
+        if target_kb:
+            result = compress_to(self.data(doc_id), int(target_kb) * 1024)
+        else:
+            result = compress(self.data(doc_id), compression)
         return protect(result.data, protection), result.stats()
 
     def convert(self, doc_id: str, fmt: str, pages: str = "", dpi: int = 150) -> tuple[bytes, str, str, dict]:

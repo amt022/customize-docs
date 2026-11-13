@@ -3,7 +3,7 @@
 All-in-one app for government / exam / admission paperwork: hub home, Photo & Signature tool, PDF Studio.
 
 ## Stack and layout
-- `backend/pdfmaster` – Python, FastAPI, pikepdf. `engine/` holds the PDF/scan logic, `service.py` the API layer, `tests/` pytest (102 tests, all passing); `storage.py` (local folder or S3) and `db.py` (SQLite or PostgreSQL) hold the data.
+- `backend/pdfmaster` – Python, FastAPI, pikepdf. `engine/` holds the PDF/scan logic, `service.py` the API layer, `tests/` pytest (107 tests, all passing); `storage.py` (local folder or S3) and `db.py` (SQLite or PostgreSQL) hold the data.
 - `web/` – React + TS + Vite. Build with `npm run build` after changes.
 - `desktop/` – Electron wrapper.
 
@@ -33,6 +33,13 @@ All-in-one app for government / exam / admission paperwork: hub home, Photo & Si
 - Tilt handled by shear only.
 
 ## Change log (newest first; add a line after each task)
+- Hindi UI option: `web/src/i18n.ts` (`t()` keyed by the English text, `useLang`, `formeasy.lang`, sets `<html lang>`); हिं/EN button in the header; hub, tabs, checklist (documents have `hi` text), PDF Studio start page, quick tools, errors and footer translated. Editor and Photo tool panels still English.
+- SEO + share preview: `index.html` title/description/canonical, Open Graph + Twitter card (`public/og-image.png` 1200x630), JSON-LD WebApplication, `manifest.webmanifest` (served as application/manifest+json) with `icon-192/512`, maskable icon, `apple-touch-icon`, `robots.txt`, `sitemap.xml` (formeasy.in).
+- Friendlier errors: plain messages for not-a-PDF, damaged PDF, unreadable/too-big picture, missing document; pydantic 422s now return `{message, field}`; `api.ts` `request()` turns "no connection" into a clear message and `fallbackMessage()` covers 413/429/5xx proxy pages; hub sends a dropped photo to "JPG to PDF" instead of erroring. Test: `test_errors_are_plain_language_with_a_message`.
+- Mobile Photo tool: under 900 px the exam limits panel comes first, then the upload box, then canvas controls (CSS only, `.ie-body/.ie-side { display: contents }` + `order`, `web/src/features.css`).
+- Hub refresh + quick PDF tools: three live cards (Photo, PDF Studio, Exam Checklist; "Coming soon" cards removed), Quick PDF tools (Compress, JPG→PDF, Merge, Split, PDF→JPG, Edit text, Resize photo; two columns on phones), Popular exams pills, "How it works" steps. Quick tools open the editor with `StartAction` (`compress` / `split` / `tojpg` opens the right dialog); merge uploads the first file then `api.merge`s the rest; several PDFs dropped on PDF Studio merge.
+- Exam checklist tab (`Checklist.tsx`): per exam group, photo/signature/thumb items from `TEMPLATES` with "Make it" (opens Photo tool with that preset on, `ImageEditor preset` prop) and documents list (category, PwBD, ID, class 10…; optional + PDF KB limit, Scan to PDF / Compress buttons); ticks in `formeasy.checklist.<group>`, chosen exam in `formeasy.exam`.
+- PDF under N KB: `compress_to()` in `engine/compress.py` tries lossless then a ladder of dpi/JPEG steps (last steps turn big lossless scans into JPEG), returns the gentlest that fits or the smallest with `reached=False`; `export` takes `targetKb` (10–100000, 1 KB = 1024 B), header `X-Target-Reached`. Download dialog: "Under a size limit" option with 100 KB…2 MB chips + custom KB (remembered in `formeasy.targetKb`). Tests: `test_compress_to_*`, `test_export_with_target_kb`.
 - Render deploy: `render.yaml` Blueprint (Docker, free plan, Singapore, Neon PostgreSQL + Cloudflare R2, email console until Brevo), `PDFMASTER_S3_SSE=none` turns off the SSE header for R2. DEPLOYMENT.md section 6. Live setup on Cloudflare: zone formeasy.in active, tunnel `formeasy` created for the Oracle route.
 - Free deploy option: DEPLOYMENT.md 5b (Oracle Cloud Always Free ARM in Mumbai/Hyderabad + Cloudflare Tunnel); `setup.sh` skips ufw when Oracle's iptables rules are present.
 - Cloudflare deploy (one server): `deploy/` docker-compose (app + Cloudflare Tunnel, no open ports, SQLite + files in `formeasy-data` volume), `.env.example`, `setup.sh` (Docker, swap, ufw, cron backup), `update.sh`, `backup.sh` (nightly, 7 days); `PDFMASTER_CLIENT_IP_HEADER=cf-connecting-ip` gives rate limits / access log the visitor's IP; Dockerfile creates `/data`; GitHub workflow builds the image + checks `/health`. DEPLOYMENT.md section 5. Not yet run on a real server. Test: `test_visitor_address_comes_from_the_cloudflare_header_when_configured`.

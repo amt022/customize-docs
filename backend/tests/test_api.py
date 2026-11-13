@@ -191,3 +191,18 @@ def test_trash_is_emptied_after_days(tmp_path):
         db.execute("UPDATE documents SET deleted_at='2020-01-01T00:00:00+00:00' WHERE id=?", (old,))
     assert svc.purge_trash(30) == 1
     assert [d["id"] for d in svc.trash()] == [new]
+
+
+def test_errors_are_plain_language_with_a_message(client):
+    """Every error has a {message} a person can act on: no Python repr, no raw pydantic list."""
+    r = client.post("/api/v1/documents", files={"file": ("photo.pdf", b"\xff\xd8\xff\xe0 jpeg", "application/pdf")})
+    assert r.status_code == 400 and "not a PDF" in r.json()["message"] and "pictures" in r.json()["message"]
+    r = client.post("/api/v1/documents", files={"file": ("bad.pdf", b"%PDF-1.4 garbage", "application/pdf")})
+    assert r.status_code == 400 and "damaged" in r.json()["message"]
+    r = client.post("/api/v1/documents/from-images", files={"files": ("a.png", b"not an image", "image/png")})
+    assert r.status_code == 422 and "BytesIO" not in r.json()["message"] and "JPG" in r.json()["message"]
+    r = client.get("/api/v1/documents/0123456789abcdef/file")
+    assert r.status_code == 404 and "upload it again" in r.json()["message"]
+    doc = upload(client)
+    r = client.post(f"/api/v1/documents/{doc['id']}/export", json={"targetKb": "lots"})
+    assert r.status_code == 422 and r.json()["success"] is False and "targetKb" in r.json()["message"]

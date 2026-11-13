@@ -32,7 +32,10 @@ const TOOLS: { id: Tool; label: string; icon: string }[] = [
   { id: "image", label: "Insert image", icon: "🖼" },
 ];
 
-export default function Editor({ id, startTool = "edit", onClose }: { id: string; startTool?: Tool; onClose: () => void }) {
+/** A dialog to open as soon as the document is loaded (hub quick tools). */
+export type StartAction = "compress" | "split" | "tojpg";
+
+export default function Editor({ id, startTool = "edit", startAction, onClose }: { id: string; startTool?: Tool; startAction?: StartAction; onClose: () => void }) {
   const [doc, setDoc] = useState<DocumentInfo | null>(null);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1);
@@ -58,7 +61,7 @@ export default function Editor({ id, startTool = "edit", onClose }: { id: string
   const [toast, setToast] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [tool, setTool] = useState<Tool>(startTool);
   const [menu, setMenu] = useState<null | "pages" | "annotate">(null);
-  const [modal, setModal] = useState<Modal>(null);
+  const [modal, setModal] = useState<Modal>(startAction === "split" ? "extract" : startAction ? "export" : null);
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const [stampText, setStampText] = useState("APPROVED");
   const [pendingNote, setPendingNote] = useState<{ x: number; y: number } | null>(null);
@@ -558,7 +561,7 @@ export default function Editor({ id, startTool = "edit", onClose }: { id: string
       </footer>
 
       {modal === "export" && (
-        <ExportDialog docId={id} pageCount={doc.page_count} isScan={model?.type === "scanned" && !isScan} onConvert={async (format, pages, dpi) => {
+        <ExportDialog docId={id} pageCount={doc.page_count} startTarget={startAction === "compress"} startFormat={startAction === "tojpg" ? "jpg" : undefined} isScan={model?.type === "scanned" && !isScan} onConvert={async (format, pages, dpi) => {
           setModal(null);
           try {
             const { blob, name, noText } = await api.convert(id, format, pages, dpi);
@@ -570,9 +573,14 @@ export default function Editor({ id, startTool = "edit", onClose }: { id: string
         }} wasEncrypted={!!doc.was_encrypted} isSigned={!!doc.is_signed} onClose={() => setModal(null)} onExport={async (o) => {
           setModal(null);
           try {
-            const { blob, name, originalSize, size } = await api.exportPdf(id, o);
+            const { blob, name, originalSize, size, reached } = await api.exportPdf(id, o);
             saveBlob(blob, name);
-            if (o.compression !== "none" && originalSize) {
+            if (o.targetKb) {
+              const limit = o.targetKb >= 1024 && o.targetKb % 1024 === 0 ? `${o.targetKb / 1024} MB` : `${o.targetKb} KB`;
+              notify(reached ? "ok" : "err", reached
+                ? (size < originalSize ? `Downloaded ${formatBytes(size)}: under ${limit} (was ${formatBytes(originalSize)})` : `Downloaded ${formatBytes(size)}: it was already under ${limit}`)
+                : `Could not get under ${limit}; the smallest we could make is ${formatBytes(size)} (downloaded). Try fewer pages (Pages → Extract) or a scan at lower resolution.`);
+            } else if (o.compression !== "none" && originalSize) {
               notify("ok", size < originalSize
                 ? `Downloaded ${formatBytes(size)} (was ${formatBytes(originalSize)}, ${Math.round(100 - (100 * size) / originalSize)}% smaller)`
                 : `Downloaded ${formatBytes(size)}; this file was already as small as it can get`);
