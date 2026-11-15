@@ -524,6 +524,16 @@ def text_layer(doc_id: str, body: VersionIn):
     return ok(service.add_text_layer(doc_id, body.baseVersion), "Searchable text layer added")
 
 
+class OutlinesIn(BaseModel):
+    pages: Optional[list[int]] = None
+    baseVersion: Optional[int] = None
+
+
+@app.post(f"{API}/documents/{{doc_id}}/outlines-to-scan")
+def outlines_to_scan(doc_id: str, body: OutlinesIn):
+    return ok(service.outlines_to_scan(doc_id, body.pages, body.baseVersion), "Pages turned into scans")
+
+
 @app.get(f"{API}/documents/{{doc_id}}/check")
 def check(doc_id: str):
     return ok(service.check(doc_id))

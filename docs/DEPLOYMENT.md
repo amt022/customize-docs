@@ -16,7 +16,7 @@ public website where many people use one server.
 | Real email sending (SMTP: Brevo, Resend, SES, Zoho…) | Code written and tested against a fake SMTP server, **not yet tried with a real account** |
 | Real SMS sending (MSG91 / Twilio) | Optional. Code written, **not yet tried with a real account** |
 | Docker image (`backend/Dockerfile`) | Written; built and health-checked by GitHub Actions (`.github/workflows/docker.yml`) on push, **not yet run there** |
-| One-server deploy with Cloudflare Tunnel (`deploy/`) | Written (section 5), **not yet run on a real server** |
+| One-server deploy with Cloudflare Tunnel (`deploy/`) | **Live** on Oracle Cloud Always Free (Mumbai, 2 OCPU / 12 GB) at formeasy.in since 2026-11-15 |
 | Security headers (nosniff, no framing, HSTS over https), Docker HEALTHCHECK, `.dockerignore` | Done |
 | Legal basics: Privacy Policy + Terms pages, consent checkbox at sign-in (version stored per user), grievance contact in the footer, forgery warning, 180-day access log | Done, tested. **Wording not yet checked by a lawyer** (section 4) |
 | Load testing | Light test done on a dev PC (`backend/loadtest.py`: 40 people uploading and rendering at once, 0 errors, renders under 0.5 s). OCR-heavy and real-server (S3 + PostgreSQL) load not tested. Estimate: 20–40 people editing at once per 2-core server, 2 OCR jobs at a time per process |

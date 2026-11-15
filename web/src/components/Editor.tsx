@@ -323,6 +323,22 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
     }
   };
 
+  // text printed as shapes (no fonts): turn those pages into scans, then recognise the words
+  const makeEditable = async () => {
+    if (!doc) return;
+    setBusy(true);
+    try {
+      const res = await api.outlinesToScan(id, doc.current_version);
+      await reload();
+      notify("ok", `${res.pages.length} page(s) ready · recognising the text…`);
+      await runOcr();
+    } catch (e: any) {
+      notify("err", e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (!ocrJob) return;
     const t = window.setInterval(async () => {
@@ -455,6 +471,14 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
               ) : (
                 <>Editing scanned text needs the Tesseract OCR engine, which isn't installed. Install it once (e.g. <code>winget install UB-Mannheim.TesseractOCR</code>), then reopen this page.</>
               )}
+            </div>
+          )}
+          {view === "edit" && model?.type === "outlined" && (
+            <div className="scan-banner">
+              <strong>This page's text is drawn as shapes</strong> (for example a PDF made with “Microsoft Print to PDF”), so its words can't be clicked yet.{" "}
+              {ocrJob ? <>Recognising text… {Math.round(ocrJob.progress * 100)}%</>
+                : <button className="btn small primary" disabled={busy} onClick={makeEditable}>Make text editable</button>}
+              <span className="muted"> Turns such pages into a sharp 300 dpi scan and recognises the words; Undo brings the original back.</span>
             </div>
           )}
           {view === "edit" && isScan && (

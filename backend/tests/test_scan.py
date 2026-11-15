@@ -225,3 +225,68 @@ def test_erase_keeps_a_band_edge_that_runs_behind_the_word():
     mask[8:22, 15:45] = True
     out = inpaint(arr, mask)
     assert np.abs(out - arr).max() < 3
+
+
+def _form_pdf() -> bytes:
+    """A two-column form in Times: labels on the left, values far to the right on the same baselines."""
+    import io as _io
+
+    rows = [("Name :", "SHIVANGI TRIPATHI"), ("Father's Name :", "RAKESH TRIPATHI"), ("Gender :", "Female"),
+            ("Marital Status :", "Unmarried"), ("Category :", "General"), ("Nationality :", "Indian"),
+            ("State of Birth :", "UTTAR PRADESH"), ("Identification Mark :", "Mole on left hand")]
+    ops = []
+    for i, (label, value) in enumerate(rows):
+        y = 760 - i * 28
+        ops.append(f"BT /F1 11 Tf 60 {y} Td ({label.replace(chr(39), chr(92) + chr(39))}) Tj ET")
+        ops.append(f"BT /F1 11 Tf 380 {y} Td ({value}) Tj ET")
+    pdf = pikepdf.new()
+    font = pikepdf.Dictionary(Type=pikepdf.Name.Font, Subtype=pikepdf.Name.Type1, BaseFont=pikepdf.Name("/Times-Roman"))
+    page = pikepdf.Dictionary(Type=pikepdf.Name.Page, MediaBox=[0, 0, 595, 842],
+                              Contents=pdf.make_stream("\n".join(ops).encode()),
+                              Resources=pikepdf.Dictionary(Font=pikepdf.Dictionary(F1=font)))
+    pdf.pages.append(pikepdf.Page(page))
+    out = _io.BytesIO()
+    pdf.save(out)
+    return out.getvalue()
+
+
+def test_form_value_far_from_its_label_is_matched_to_the_serif_typeface():
+    """OCR lines cross the gap between a label and its value. Measured as one piece, the wide gap made
+    the widest typeface (Courier New) win and the page looked lighter, so edits also came out bold."""
+    from pdfmaster.engine import scanedit
+
+    src = _form_pdf()
+    data, ocr = scanned_pdf(src), synthetic_ocr(src)
+    for w in ocr["words"]:  # Tesseract puts a label and its value on one line, across the gap
+        w["line"] = round(w["bbox"][1] / 10)
+    scanedit._PAGE_RANKS.clear()
+    idx = next(i for i, w in enumerate(ocr["words"]) if w["text"] == "Female")
+    rep = scanedit.edit_scan(data, 0, ocr, [idx], "Male").report
+    assert "Courier" not in rep["font"] and "Bold" not in rep["font"], rep["font"]
+    assert any(n in rep["font"] for n in ("Times", "Liberation Serif", "Tinos")), rep["font"]
+
+
+def test_shorter_word_pulls_the_whole_rest_of_the_line_left():
+    """SHIVANGI -> OM pulls TRIPATHI left. The patch only covered where TRIPATHI went, so its right
+    end was cut off the moved copy and the old letters stayed behind ('OM TRIPA   THI')."""
+    from pdfmaster.engine import scanedit
+
+    src = _form_pdf()
+    data, ocr = scanned_pdf(src), synthetic_ocr(src)
+    scanedit._PAGE_RANKS.clear()
+    ws = ocr["words"]
+    i = next(i for i, w in enumerate(ws) if w["text"] == "SHIVANGI")
+    trip = ws[i + 1]
+    assert trip["text"] == "TRIPATHI"
+    out = scanedit.edit_scan(data, 0, ocr, [i], "OM").data
+    z, H = DPI / 72, 842
+    r0, r1 = int((H - trip["bbox"][3]) * z) - 2, int((H - trip["bbox"][1]) * z) + 3
+
+    def band(pdf):
+        return render_array(pdf, 0, z).mean(axis=2)[r0:r1] < 110
+    before, after = band(data), band(out)
+    c0, c1 = int(trip["bbox"][0] * z), int(trip["bbox"][2] * z) + 2
+    cols = np.nonzero(after.any(axis=0))[0]
+    assert cols[-1] < c1 - 0.4 * (c1 - c0), "TRIPATHI was not pulled left (or its old end stayed behind)"
+    moved = after[:, cols[-1] - (c1 - c0) + 1:cols[-1] + 1].sum()
+    assert moved >= 0.85 * before[:, c0:c1].sum(), "the moved TRIPATHI lost letters"

@@ -153,6 +153,7 @@ class PageModel:
         self.streams: dict[str, StreamInfo] = {}
         self.glyphs: list[Glyph] = []
         self.image_area = 0.0
+        self.curves = 0  # Bezier segments drawn: text printed as outlines has thousands
         self.warnings: list[str] = []
         self._chain = 0
         self._visiting: set = set()
@@ -206,6 +207,7 @@ class PageModel:
                 elif op in ("m", "l"):
                     path.append(G.apply(gs.ctm, float(ops[0]), float(ops[1])))
                 elif op in ("c", "v", "y"):
+                    self.curves += 1
                     nums = [float(v) for v in ops]
                     path += [G.apply(gs.ctm, nums[i], nums[i + 1]) for i in range(0, len(nums) - 1, 2)]
                 elif op in ("W", "W*"):
@@ -422,4 +424,6 @@ class PageModel:
             return "hybrid" if img_cov > 0.5 else "digital"
         if invisible > 0 or img_cov > 0.3:
             return "scanned"
+        if self.curves >= 300:  # no text, but letters drawn as shapes ("Microsoft Print to PDF" and the like)
+            return "outlined"
         return "empty"

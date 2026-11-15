@@ -374,10 +374,12 @@ _PAGE_RANKS: dict = {}  # per scan image, so every edit on a page lands on the s
 
 def _prepare(refs: list) -> list:
     prepared = []
-    for mask, text in refs:
+    for ref in refs:  # (mask, text) or (mask, text, weight)
+        mask, text = ref[0], ref[1]
+        wt = ref[2] if len(ref) > 2 else 1.0
         tight = _tight(mask) if mask is not None else None
         if tight is not None and text.strip():
-            prepared.append((_fingerprint(tight), tight.shape[1] / tight.shape[0], text, max(len(text.strip()), 1), tight.shape[0]))
+            prepared.append((_fingerprint(tight), tight.shape[1] / tight.shape[0], text, wt * max(len(text.strip()), 1), tight.shape[0]))
     if len(prepared) >= 3:  # a crop much taller than the rest caught a neighbouring line: ignore it
         med = float(np.median([p[4] for p in prepared]))
         prepared = [p for p in prepared if p[4] <= 1.8 * med]
@@ -436,7 +438,13 @@ def auto_font(local: dict, page: dict, new_text: str, bold: bool, italic: bool, 
         serif = local[top_local][1].family in _SERIF
         same = [k for k in ok if (((local.get(k) or page.get(k))[1].family in _SERIF) == serif)]
         ok = same or ok
-    best = (local.get(max(ok, key=score)) or page.get(max(ok, key=score)))[1]
+    top = max(ok, key=score)
+    best = (local.get(top) or page.get(top))[1]
+    # few letters (a number, a short word) hardly tell typefaces apart: when the page's own typeface scores
+    # about as well, use it, so edits match the rest of the page
+    page_top = max((k for k in ok if k in page), key=lambda k: page[k][0], default=None)
+    if page_top is not None and page_top != top and page_top in local and score(page_top) >= score(top) - 0.08:
+        best = page[page_top][1]
     if bold or heavy:
         bf, q = _style(best.family, True, italic, False, False)
         if bf is not None and q != "similar" and all(has_glyph(bf, c) for c in new_text if not c.isspace()):
@@ -564,28 +572,59 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
             font = None
         reused = font is not None
     if font is None and family == "auto" and wc is not None:
-        refs = [(word_mask, old_text)]
+        refs = [(word_mask, old_text, 3.0)]
         by_line: dict[int, list[dict]] = {}
         for w in words:
             by_line.setdefault(w["line"], []).append(w)
 
-        def line_ref(li):
+        def segments(li):
+            """Runs of words with normal word spacing. An OCR 'line' can cross table cells or columns
+            ('Gender :' ... 'Female'); measured as one piece, the wide gap makes the widest typeface win."""
             lw = sorted(by_line[li], key=lambda w: w["bbox"][0])
-            text = " ".join(w["text"] for w in lw)
             rs = [rect_px(w["bbox"]) for w in lw]
+            hs = sorted(r[3] - r[1] for r in rs)
+            gap_max = 1.2 * hs[len(hs) // 2]
+            runs, cur = [], [0]
+            for i in range(1, len(lw)):
+                if rs[i][0] - rs[i - 1][2] > gap_max:
+                    runs.append(cur)
+                    cur = []
+                cur.append(i)
+            runs.append(cur)
+            return [[lw[i] for i in run] for run in runs], [[rs[i] for i in run] for run in runs]
+
+        def seg_ref(ws, rs):
+            text = " ".join(w["text"] for w in ws)
             lcrop = crop(min(r[0] for r in rs), min(r[1] for r in rs), max(r[2] for r in rs), max(r[3] for r in rs), 2.0)
             if lcrop is None or lcrop.size == 0:
                 return None
             raw = _ink_bool(lcrop)
             return unshear(raw, estimate_tilt(raw)), text
 
+        def line_refs(li, min_chars=1):
+            out = []
+            for ws, rs in zip(*segments(li)):
+                if len(" ".join(w["text"] for w in ws)) >= min_chars:
+                    r = seg_ref(ws, rs)
+                    if r:
+                        out.append(r)
+            return out
+
+        def line_ref(li):  # the longest piece of the line
+            refs = line_refs(li)
+            return max(refs, key=lambda r: len(r[1])) if refs else None
+
         near = sorted(by_line, key=lambda li: (li != sel[0]["line"], abs(li - sel[0]["line"])))
-        for li in near[:4]:
-            if li != sel[0]["line"] and len(" ".join(w["text"] for w in by_line[li])) < 14:
+        own_h = float(np.median([rect_px(w["bbox"])[3] - rect_px(w["bbox"])[1] for w in by_line[sel[0]["line"]]]))
+        for li in near[:6]:
+            if li == sel[0]["line"]:  # the word's own line says most about its typeface
+                refs += [(m, t, 3.0) for m, t in line_refs(li)]
                 continue
-            r = line_ref(li)
-            if r:
-                refs.append(r)
+            hs = [rect_px(w["bbox"])[3] - rect_px(w["bbox"])[1] for w in by_line[li]]
+            if not 0.8 * own_h <= float(np.median(hs)) <= 1.25 * own_h:  # a heading or footnote of another size
+                continue
+            refs += line_refs(li, 6)
+        refs = refs[:10]
         local = rank_fonts(refs, italic)
 
         import hashlib
@@ -596,9 +635,9 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
                 return 0.75 * hpx <= float(np.median(hs)) <= 1.3 * hpx
 
             sized = [li for li in by_line if same_size(li)] or list(by_line)
-            longest = sorted(sized, key=lambda li: -sum(len(w["text"]) for w in by_line[li]))[:8]
-            prefs = [r for r in (line_ref(li) for li in longest if len(by_line[li]) >= 3) if r]
-            body = [r for r in (line_ref(li) for li in sized[:40] if len(by_line[li]) >= 4) if r][:12]
+            pieces = [r for li in sized for r in line_refs(li, 8)]
+            prefs = sorted(pieces, key=lambda r: -len(r[1]))[:10]
+            body = [r for r in pieces if len(r[1].split()) >= 2][:16]
             dens = [t.mean() for t in (_tight(m) for m, _t in body) if t is not None]
             _PAGE_RANKS[pkey] = (rank_fonts(prefs, italic), float(np.median(dens)) if dens else 0.0)
             if len(_PAGE_RANKS) > 16:
@@ -741,8 +780,10 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
     if shift_dx:
         blk = (int(max(min(r[0] for r in t_rects) - 0.15 * hpx, 0)), int(max(min(r[1] for r in t_rects) - 0.2 * hpx, 0)),
                int(min(np.ceil(max(r[2] for r in t_rects) + 0.15 * hpx), W)), int(min(np.ceil(max(r[3] for r in t_rects) + 0.2 * hpx), H)))
-        rc0, rc1 = min(rc0, blk[0] + shift_dx - pad), max(rc1, blk[2] + shift_dx + pad)
-        rr0, rr1 = min(rr0, blk[1] + shift_dy - pad), max(rr1, blk[3] + shift_dy + pad)
+        # cover both where the rest of the line is now and where it goes (pulled left, its old right end
+        # must be copied and erased too)
+        rc0, rc1 = min(rc0, blk[0] - pad, blk[0] + shift_dx - pad), max(rc1, blk[2] + pad, blk[2] + shift_dx + pad)
+        rr0, rr1 = min(rr0, blk[1] - pad, blk[1] + shift_dy - pad), max(rr1, blk[3] + pad, blk[3] + shift_dy + pad)
     # which scan a patch belongs to: a fingerprint of the image data (object numbers change when the file is saved;
     # older patches carry "num gen", still accepted)
     import hashlib

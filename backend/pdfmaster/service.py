@@ -406,6 +406,55 @@ class DocumentService:
                          {"summary": f"Searchable text layer on {len(scanned)} page(s)"}, {})
         return {**self.get(doc_id), "version": v}
 
+    def outlines_to_scan(self, doc_id: str, pages: Optional[list[int]], base_version: Optional[int], dpi: int = 300) -> dict:
+        """New version where pages whose text is drawn as shapes (no fonts, e.g. "Microsoft Print to PDF")
+        become one 300 dpi picture each, so OCR + scan editing can change their words."""
+        import io as _io
+
+        import numpy as np
+        import pikepdf
+        from PIL import Image
+
+        from .engine.interpreter import PageModel
+        from .engine.render import render_array
+
+        doc = self.get(doc_id)
+        self._check_version(doc, base_version)
+        data = self.data(doc_id)
+        pdf = open_pdf(data)
+        if pages is None:
+            pages = [p for p in range(1, len(pdf.pages) + 1) if PageModel(pdf, p - 1).page_type() == "outlined"]
+        pages = sorted({p for p in pages if 1 <= p <= len(pdf.pages)})
+        if not pages:
+            raise EditError("No page with drawn (outlined) text found")
+        for p in pages:
+            arr = render_array(data, p - 1, dpi / 72)
+            gray = bool(np.abs(arr.astype(np.int16) - arr.mean(axis=2, keepdims=True)).max() < 12)
+            im = Image.fromarray(arr).convert("L" if gray else "RGB")
+            buf = _io.BytesIO()
+            im.save(buf, "JPEG", quality=92, subsampling=0)
+            page = pdf.pages[p - 1]
+            box = page.obj.get("/CropBox") or page.mediabox
+            x0, y0, x1, y1 = (float(v) for v in box)
+            x0, x1, y0, y1 = min(x0, x1), max(x0, x1), min(y0, y1), max(y0, y1)
+            w, h = x1 - x0, y1 - y0
+            if int(page.obj.get("/Rotate", 0)) % 180:
+                w, h = h, w  # the picture is the page as displayed
+            img = pikepdf.Stream(pdf, buf.getvalue())
+            img.Type, img.Subtype = pikepdf.Name.XObject, pikepdf.Name.Image
+            img.Width, img.Height, img.BitsPerComponent = im.width, im.height, 8
+            img.ColorSpace = pikepdf.Name.DeviceGray if gray else pikepdf.Name.DeviceRGB
+            img.Filter = pikepdf.Name.DCTDecode
+            page.obj.Contents = pdf.make_stream(f"q {w:.4f} 0 0 {h:.4f} 0 0 cm /Scan0 Do Q".encode())
+            page.obj.Resources = pikepdf.Dictionary(XObject=pikepdf.Dictionary(Scan0=pdf.make_indirect(img)))
+            page.obj.MediaBox = [0, 0, w, h]
+            for k in ("/CropBox", "/Rotate", "/Annots"):  # annotations are part of the picture now
+                if k in page.obj:
+                    del page.obj[k]
+        summary = f"Turned {len(pages)} page(s) with drawn text into scans so their words can be edited"
+        v = self._commit(doc_id, doc, save_pdf(pdf), pages[0], "OUTLINES_TO_SCAN", {"summary": summary, "pages": pages}, {})
+        return {**self.get(doc_id), "version": v, "pages": pages}
+
     # ------------------------------------------------------------------ edits
     def _check_version(self, doc: dict, base_version: Optional[int]) -> None:
         if base_version is not None and base_version != doc["current_version"]:

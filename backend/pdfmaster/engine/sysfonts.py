@@ -3,6 +3,7 @@ Type0/Identity-H subset so missing characters can be drawn in the closest
 possible typeface."""
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import logging
@@ -63,37 +64,39 @@ class SysFont:
 @lru_cache(maxsize=1)
 def font_index() -> list[SysFont]:
     cache = Path(os.environ.get("PDFMASTER_DATA", Path(__file__).resolve().parents[2] / "data")) / "font-index.json"
+    files = sorted(p for d in _font_dirs() for p in d.rglob("*") if p.suffix.lower() in (".ttf", ".ttc", ".otf"))
+    # rebuilt when fonts are added or removed (a new server image keeps the old cache in its data volume)
+    sig = hashlib.sha1("\n".join(str(p) for p in files).encode()).hexdigest()
     try:
         if cache.exists():
-            return [SysFont(**d) for d in json.loads(cache.read_text("utf-8"))]
+            saved = json.loads(cache.read_text("utf-8"))
+            if isinstance(saved, dict) and saved.get("sig") == sig:
+                return [SysFont(**d) for d in saved["fonts"]]
     except Exception:
         pass
     fonts: list[SysFont] = []
-    for d in _font_dirs():
-        for p in d.rglob("*"):
-            if p.suffix.lower() not in (".ttf", ".ttc", ".otf"):
-                continue
-            try:
-                if p.suffix.lower() == ".ttc":
-                    faces = TTCollection(str(p), lazy=True).fonts
-                else:
-                    faces = [TTFont(str(p), lazy=True)]
-                for i, f in enumerate(faces):
-                    if "glyf" not in f:  # only TrueType outlines are embedded as CIDFontType2
-                        continue
-                    name = f["name"]
-                    fam = str(name.getDebugName(16) or name.getDebugName(1) or "")
-                    sty = str(name.getDebugName(17) or name.getDebugName(2) or "")
-                    ps = str(name.getDebugName(6) or "")
-                    os2 = f["OS/2"] if "OS/2" in f else None
-                    bold = (os2.usWeightClass >= 600) if os2 else "bold" in sty.lower()
-                    italic = "italic" in sty.lower() or "oblique" in sty.lower()
-                    fonts.append(SysFont(str(p), i, fam, sty, ps, bold, italic))
-            except Exception as exc:
-                log.debug("skip font %s: %s", p, exc)
+    for p in files:
+        try:
+            if p.suffix.lower() == ".ttc":
+                faces = TTCollection(str(p), lazy=True).fonts
+            else:
+                faces = [TTFont(str(p), lazy=True)]
+            for i, f in enumerate(faces):
+                if "glyf" not in f:  # only TrueType outlines are embedded as CIDFontType2
+                    continue
+                name = f["name"]
+                fam = str(name.getDebugName(16) or name.getDebugName(1) or "")
+                sty = str(name.getDebugName(17) or name.getDebugName(2) or "")
+                ps = str(name.getDebugName(6) or "")
+                os2 = f["OS/2"] if "OS/2" in f else None
+                bold = (os2.usWeightClass >= 600) if os2 else "bold" in sty.lower()
+                italic = "italic" in sty.lower() or "oblique" in sty.lower()
+                fonts.append(SysFont(str(p), i, fam, sty, ps, bold, italic))
+        except Exception as exc:
+            log.debug("skip font %s: %s", p, exc)
     try:
         cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_text(json.dumps([f.__dict__ for f in fonts]), "utf-8")
+        cache.write_text(json.dumps({"sig": sig, "fonts": [f.__dict__ for f in fonts]}), "utf-8")
     except Exception:
         pass
     return fonts
@@ -109,6 +112,14 @@ _ALIASES = {
     "courier": ["couriernew", "liberationmono", "dejavusansmono"],
     "couriernewpsmt": ["couriernew"],
     "symbol": ["segoeuisymbol", "symbol"],
+}
+# Metric-compatible free clones of Windows fonts (Linux servers: fonts-liberation2, fonts-crosextra-*)
+_CLONES = {
+    "arial": ["liberationsans", "arimo"],
+    "timesnewroman": ["liberationserif", "tinos"],
+    "couriernew": ["liberationmono", "cousine"],
+    "calibri": ["carlito"],
+    "cambria": ["caladea"],
 }
 _FALLBACK_SANS = ["arial", "segoeui", "liberationsans", "dejavusans", "notosans"]
 _FALLBACK_SERIF = ["timesnewroman", "liberationserif", "dejavuserif", "notoserif"]
@@ -145,6 +156,9 @@ def match_font(pdf_name: str, bold: bool, italic: bool, serif: bool, mono: bool)
         by_family.setdefault(_norm(f.family), []).append(f)
     if fam in by_family:
         return _pick(by_family[fam], bold, italic), "family"
+    for clone in _CLONES.get(fam, []):  # same widths and shapes, so it counts as the family itself
+        if clone in by_family:
+            return _pick(by_family[clone], bold, italic), "family"
     for alias in _ALIASES.get(fam, []) + _ALIASES.get(ps, []):
         if alias in by_family:
             return _pick(by_family[alias], bold, italic), "similar"

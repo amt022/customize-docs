@@ -61,7 +61,7 @@ export interface PageModel {
   page: number;
   box: [number, number, number, number];
   rotation: number;
-  type: "digital" | "scanned" | "hybrid" | "empty";
+  type: "digital" | "scanned" | "hybrid" | "empty" | "outlined";
   fonts: Record<string, FontInfo>;
   glyphs: GlyphInfo[];
   lines: LineInfo[];

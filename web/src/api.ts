@@ -176,6 +176,8 @@ export const api = {
   ocrStatus: () => call<{ available: boolean; languages: string[] }>("/ocr/status"),
   startOcr: (id: string, pages?: number[], langs = "eng+hin") => call<JobInfo>(`/documents/${id}/ocr`, json({ pages, langs })),
   job: (jobId: string) => call<JobInfo>(`/jobs/${jobId}`),
+  outlinesToScan: (id: string, baseVersion: number) =>
+    call<DocumentInfo & { pages: number[] }>(`/documents/${id}/outlines-to-scan`, json({ baseVersion })),
   textLayer: (id: string, baseVersion: number) => call<DocumentInfo>(`/documents/${id}/ocr/text-layer`, json({ baseVersion })),
 
   // AI assistant

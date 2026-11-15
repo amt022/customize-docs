@@ -289,3 +289,18 @@ def test_re_editing_squeezed_text_restores_normal_width():
     text = "".join(g.ch for g in m.glyphs)
     i = text.index("DIPLOMA")
     assert all(abs(m.glyphs[k].th - 1.0) < 1e-6 for k in range(i, i + 7))  # no leftover squeeze
+
+
+def test_free_clones_count_as_the_windows_font_on_linux_servers(monkeypatch):
+    """Without Windows fonts (Linux server), Carlito / Liberation must stand in for Calibri / Arial at
+    'family' quality, else the scan editor skips them and every edit falls back to Noto Sans."""
+    from pdfmaster.engine import sysfonts
+
+    idx = [sysfonts.SysFont("/f/Carlito-Regular.ttf", 0, "Carlito", "Regular", "Carlito", False, False),
+           sysfonts.SysFont("/f/LiberationSans-Regular.ttf", 0, "Liberation Sans", "Regular", "LiberationSans", False, False),
+           sysfonts.SysFont("/f/NotoSans-Regular.ttf", 0, "Noto Sans", "Regular", "NotoSans-Regular", False, False)]
+    monkeypatch.setattr(sysfonts, "font_index", lambda: idx)
+    f, q = sysfonts.match_font("Calibri", False, False, False, False)
+    assert (f.family, q) == ("Carlito", "family")
+    f, q = sysfonts.match_font("Arial", False, False, False, False)
+    assert (f.family, q) == ("Liberation Sans", "family")

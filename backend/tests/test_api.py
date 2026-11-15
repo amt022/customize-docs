@@ -206,3 +206,47 @@ def test_errors_are_plain_language_with_a_message(client):
     doc = upload(client)
     r = client.post(f"/api/v1/documents/{doc['id']}/export", json={"targetKb": "lots"})
     assert r.status_code == 422 and r.json()["success"] is False and "targetKb" in r.json()["message"]
+
+
+def _outlined_pdf() -> bytes:
+    """A page like "Microsoft Print to PDF" makes: no fonts, every letter a filled Bezier shape."""
+    import io
+
+    import pikepdf
+
+    shapes = []
+    for row in range(20):
+        for col in range(20):  # 400 little 'o' letters
+            x, y = 60 + col * 24, 760 - row * 30
+            shapes.append(f"{x} {y} m {x} {y + 8} {x + 12} {y + 8} {x + 12} {y} c {x + 12} {y - 8} {x} {y - 8} {x} {y} c h f")
+    pdf = pikepdf.new()
+    page = pikepdf.Dictionary(Type=pikepdf.Name.Page, MediaBox=[0, 0, 595, 842],
+                              Contents=pdf.make_stream(("0 g\n" + "\n".join(shapes)).encode()), Resources=pikepdf.Dictionary())
+    pdf.pages.append(pikepdf.Page(page))
+    out = io.BytesIO()
+    pdf.save(out)
+    return out.getvalue()
+
+
+def test_page_with_text_drawn_as_shapes_can_be_turned_into_an_editable_scan(client):
+    import numpy as np
+
+    from pdfmaster.engine.render import render_array
+
+    src = _outlined_pdf()
+    r = client.post("/api/v1/documents", files={"file": ("printed.pdf", src, "application/pdf")})
+    did = r.json()["data"]["id"]
+    assert client.get(f"/api/v1/documents/{did}/pages/1/text").json()["data"]["type"] == "outlined"
+
+    res = client.post(f"/api/v1/documents/{did}/outlines-to-scan", json={"baseVersion": 0})
+    assert res.status_code == 200, res.text
+    assert res.json()["data"]["version"] == 1 and res.json()["data"]["pages"] == [1]
+    page = client.get(f"/api/v1/documents/{did}/pages/1/text").json()["data"]
+    assert page["type"] == "scanned" and page["images"][0]["pageScan"]
+
+    after = client.get(f"/api/v1/documents/{did}/file").content
+    a, b = render_array(src, 0, 1.0).astype(float), render_array(after, 0, 1.0).astype(float)
+    assert a.shape == b.shape and np.abs(a - b).mean() < 3  # looks the same
+
+    again = client.post(f"/api/v1/documents/{did}/outlines-to-scan", json={"baseVersion": 1})
+    assert again.status_code == 422  # nothing left to convert
