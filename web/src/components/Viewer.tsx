@@ -63,8 +63,14 @@ export default function Viewer({ pdf, pageNum, zoom, model, selection, highlight
     return toViewRect(viewport, unionBox(model.glyphs, ids));
   }, [model, selection, viewport]);
 
+  const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
   const handleWordClick = (w: Word, e: React.MouseEvent) => {
     e.stopPropagation();
+    const inSel = selection && selection.line === w.line && w.start >= selection.start && w.end <= selection.end;
+    if (touch && inSel && !e.shiftKey) {  // phones: tap the selected word again to edit it
+      onEdit();
+      return;
+    }
     if (e.shiftKey && selection && selection.line === w.line) {
       onSelect({ page: pageNum, line: w.line, start: Math.min(selection.start, w.start), end: Math.max(selection.end, w.end) });
     } else {
@@ -104,6 +110,16 @@ export default function Viewer({ pdf, pageNum, zoom, model, selection, highlight
             );
           })}
           {selRect && <div className="selection" style={selRect} />}
+          {selRect && touch && selection && (() => {
+            const next = words.filter((w) => w.line === selection.line && w.start >= selection.end).sort((a, b) => a.start - b.start)[0];
+            return (
+              <div className="touch-bar" style={{ left: Math.max(4, selRect.left), top: selRect.top + selRect.height + 6 }}
+                onClick={(e) => e.stopPropagation()}>
+                <button className="btn small primary" onClick={onEdit}>✎ Edit</button>
+                {next && <button className="btn small" onClick={() => onSelect({ ...selection, end: next.end })}>＋ Next word</button>}
+              </div>
+            );
+          })()}
           {children?.(viewport)}
         </div>
       )}

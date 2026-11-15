@@ -40,6 +40,8 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1);
   const [zoom, setZoom] = useState(1.5);
+  const userZoomed = useRef(false);
+  const canvasRef = useRef<HTMLElement | null>(null);
   const [model, setModel] = useState<PageModel | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
   const [editing, setEditing] = useState(false);
@@ -105,6 +107,21 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
     api.annotations(id, page).then((a) => !cancelled && setAnnotations(a)).catch(() => setAnnotations([]));
     return () => { cancelled = true; };
   }, [id, page, doc?.current_version]);
+
+  // phones: start with the page fitted to the screen width (until the user zooms)
+  useEffect(() => {
+    if (!model || userZoomed.current) return;
+    const fitWidth = () => {
+      const el = canvasRef.current;
+      if (!el || window.innerWidth > 760 || userZoomed.current) return;
+      const pad = 2 * parseFloat(getComputedStyle(el).paddingLeft || "0");
+      const w = model.box[2] - model.box[0];
+      if (w > 0) setZoom(Math.max(0.3, Math.min(1.5, Math.floor(((el.clientWidth - pad) / w) * 100) / 100)));
+    };
+    fitWidth();
+    window.addEventListener("resize", fitWidth);
+    return () => window.removeEventListener("resize", fitWidth);
+  }, [model, pdf, doc === null]);
 
   useEffect(() => loadModel(), [loadModel]);
 
@@ -386,7 +403,10 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
   }
 
   const pageHits = hits.filter((h) => h.page === page).map((h) => h.glyphs);
-  const zoomBy = (f: number) => setZoom((z) => Math.min(4, Math.max(0.5, Math.round(z * f * 100) / 100)));
+  const zoomBy = (f: number) => {
+    userZoomed.current = true;
+    setZoom((z) => Math.min(4, Math.max(0.3, Math.round(z * f * 100) / 100)));
+  };
 
   return (
     <div className="app" onClick={() => menu && setMenu(null)}>
@@ -394,10 +414,10 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
         <button className="brand-btn" onClick={onClose} title="Back to FormEasy"><Logo size={30} /></button>
         <div className="doc-name" title={doc.original_name}>{doc.original_name}</div>
         <div className="tool-group">
-          <button className="btn ghost" onClick={() => undoRedo("undo")} disabled={!doc.canUndo || busy} title="Undo (Ctrl+Z)">↶ Undo</button>
-          <button className="btn ghost" onClick={() => undoRedo("redo")} disabled={!doc.canRedo || busy} title="Redo (Ctrl+Y)">↷ Redo</button>
+          <button className="btn ghost" onClick={() => undoRedo("undo")} disabled={!doc.canUndo || busy} title="Undo (Ctrl+Z)" aria-label="Undo">↶<span className="lbl"> Undo</span></button>
+          <button className="btn ghost" onClick={() => undoRedo("redo")} disabled={!doc.canRedo || busy} title="Redo (Ctrl+Y)" aria-label="Redo">↷<span className="lbl"> Redo</span></button>
         </div>
-        <div className="tool-group">
+        <div className="tool-group tools-main">
           <button className={"btn ghost" + (tool === "edit" ? " active-tool" : "")} onClick={() => setTool("edit")} title="Select and edit text">𝐓 Edit text</button>
           <button className={"btn ghost" + (tool === "images" ? " active-tool" : "")} title="Move, resize, replace or insert pictures"
             onClick={() => { setMenu(null); setSelection(null); setEditing(false); setView("edit"); setTool(tool === "images" ? "edit" : "images"); }}>🖼 Images</button>
@@ -461,7 +481,7 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
 
       <div className="workspace">
         <Thumbnails pdf={pdf} page={page} onPage={setPage} actions={pageActions} />
-        <main className="canvas-area">
+        <main className="canvas-area" ref={canvasRef}>
           {view === "edit" && model?.type === "scanned" && !isScan && (
             <div className="scan-banner">
               <strong>Scanned page.</strong>{" "}
