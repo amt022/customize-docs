@@ -450,3 +450,27 @@ def test_display_name_the_ocr_never_saw_is_found_without_marking_it(tmp_path):
     nb = res.ocr["words"][-1]["bbox"]
     assert 0.5 * (true[3] - true[1]) < nb[3] - nb[1] < 1.4 * (true[3] - true[1]), (nb, true)
     assert abs((nb[0] + nb[2]) / 2 - (true[0] + true[2]) / 2) < 15
+
+
+def test_editing_an_edited_line_again_keeps_small_capitals_and_weight():
+    """Every edit of an already edited line lost the card's small capitals (plain tall capitals came out) and
+    a little more weight each time, because the new measurements were taken from the previous edit."""
+    from pdfmaster.engine import scanedit
+
+    data, ocr = _card(_CARD)
+    scanedit._PAGE_RANKS.clear()
+    i = next(i for i, w in enumerate(ocr["words"]) if w["text"] == "SHOBHAVATI")
+    r1 = scanedit.edit_scan(data, 0, ocr, [i], "RAMESHWARI")
+    w1 = r1.ocr["words"][-1]
+    assert w1["sc"] and "wgt" in w1
+    j = len(r1.ocr["words"]) - 1
+    r2 = scanedit.edit_scan(r1.data, 0, r1.ocr, [j], "Sunita")
+    w2 = r2.ocr["words"][-1]
+    assert w2["sc"] == w1["sc"] and w2["wgt"] == w1["wgt"], (w1, w2)
+    arr = render_array(r2.data, 0, 1.0).astype(np.float32)
+    H = arr.shape[0]
+    b = w2["bbox"]
+    ink = scanedit._ink_bool(arr[int(H - b[3]) - 1:int(H - b[1]) + 2, int(b[0]) - 1:int(b[2]) + 2])
+    ink = ink[np.flatnonzero(ink.any(axis=1))[0]:, np.flatnonzero(ink.any(axis=0))[0]:]
+    top = np.flatnonzero(ink[:max(int(0.1 * ink.shape[0]), 1)].any(axis=0))  # only the S reaches the top
+    assert len(top) and top[-1] < 0.2 * ink.shape[1], top

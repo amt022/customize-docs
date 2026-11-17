@@ -747,7 +747,7 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
     if tight is not None and 0.5 * hpx <= tight.shape[0] <= hpx:  # the ink's own height beats the OCR box's slack
         hpx_c = float(tight.shape[0])
     conf = min(float(w.get("conf", 100.0)) for w in sel)
-    cursive = family == "script" or (family == "auto" and looks_cursive(word_mask, old_text, conf))
+    cursive = family == "script" or (family == "auto" and (any(w.get("cursive") for w in sel) or looks_cursive(word_mask, old_text, conf)))
     sc = None  # small capitals: height of the small letters against the tall ones
     if not cursive and wc is not None:
         def line_sc(li):
@@ -764,6 +764,8 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
             return float(np.median([rect_px(w["bbox"])[3] - rect_px(w["bbox"])[1] for w in words if w["line"] == li]))
 
         sc = line_sc(sel[0]["line"])
+        if sc is None:  # a line edited before: its words remember the style they were drawn in
+            sc = next((w["sc"] for w in sel + [w for w in words if w["line"] == sel[0]["line"]] if w.get("sc")), None)
         if sc is None and old_text.replace(" ", "").isupper():  # too few clear words here: ask the lines around it
             h0 = line_h(sel[0]["line"])
             for li in sorted({w["line"] for w in words} - {sel[0]["line"]}, key=lambda li: abs(li - sel[0]["line"]))[:2]:
@@ -899,6 +901,7 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
     # text found by the layout search was only guessed from a smudge of script: its letters say nothing about
     # size, so the new text's own letter body is fitted to the old ink's body instead
     guessed = any(w.get("auto") for w in sel) and bool(new_text.strip())
+    kept_weight = next((w["wgt"] for w in sel if w.get("edited") and w.get("wgt") is not None and w.get("font") == [font.path, font.index]), None)
 
     def fit_to_scan(f: SysFont) -> Optional[tuple]:
         """Render the old word in typeface f at the scan's own scale and measure it exactly like the scan's word:
@@ -939,6 +942,8 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
         base = cy0 + body_s[1] + (pr.baseline - pb[1]) - extra - (xc - cx0) * tilt
         alh = _finish_alpha(pr.alpha, hh, kk)
         have, want = float(_scan_like(alh).sum()), float(word_mask.sum())
+        if kept_weight is not None:  # an earlier edit already matched the page: do not drift by re-measuring that edit
+            return kk, hh, base, kept_weight
         wgt = 0.0 if guessed else _fit_weight(alh, want) if have > 0 and 0.5 < want / have < 3.0 else 0.0  # (thin titling faces: up to the full pixel)
         return kk, hh, base, wgt
 
@@ -1297,7 +1302,8 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
         (x0, y1_), (x1, y0_) = to_pdf(new_rect[0], new_rect[1]), to_pdf(new_rect[2], new_rect[3])
         new_words.append({"text": new_text, "conf": 100.0, "line": sel[0]["line"], "color": sel[0].get("color", "#000000"),
                           "bbox": [round(min(x0, x1), 2), round(min(y0_, y1_), 2), round(max(x0, x1), 2), round(max(y0_, y1_), 2)],
-                          "edited": True, "font": [font.path, font.index]})
+                          "edited": True, "font": [font.path, font.index],
+                          "wgt": round(float(weight), 3), **({"sc": round(float(sc), 3)} if sc else {}), **({"cursive": True} if cursive else {})})
     new_ocr = {**ocr, "words": new_words}
     if has_text_layer(pdf, page):
         add_text_layer(pdf, page, new_words)
