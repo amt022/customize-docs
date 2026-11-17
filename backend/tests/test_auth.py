@@ -289,3 +289,26 @@ def test_creative_studio_details_are_private_follow_the_account_and_are_erased(h
     fresh = TestClient(hosted.app)
     _sign_in(hosted, fresh)
     assert fresh.get("/api/v1/creative").json()["data"] is None
+
+
+def test_resume_details_are_private_follow_the_account_and_are_erased(hosted):
+    laptop, phone, stranger = TestClient(hosted.app), TestClient(hosted.app), TestClient(hosted.app)
+    assert laptop.get("/api/v1/resume").json()["data"] is None
+    state = {"profile": {"name": "Sneha Gupta", "skills": "Python, SQL"}, "versions": [{"id": "a1", "name": "Data analyst"}], "current": "a1"}
+    assert laptop.put("/api/v1/resume", json={"data": state}).status_code == 200
+    # the resume is kept apart from Creative Studio details
+    assert laptop.put("/api/v1/creative", json={"data": {"details": {"bride": "A"}}}).status_code == 200
+    assert laptop.get("/api/v1/resume").json()["data"]["data"] == state
+    assert stranger.get("/api/v1/resume").json()["data"] is None
+
+    _sign_in(hosted, laptop)
+    _sign_in(hosted, phone)
+    assert phone.get("/api/v1/resume").json()["data"]["data"] == state
+
+    r = phone.put("/api/v1/resume", json={"data": {"x": "a" * (600 * 1024)}})
+    assert r.status_code == 413 and "Too much resume" in r.json()["message"]
+
+    assert phone.delete("/api/v1/auth/account").status_code == 200
+    fresh = TestClient(hosted.app)
+    _sign_in(hosted, fresh)
+    assert fresh.get("/api/v1/resume").json()["data"] is None

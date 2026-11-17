@@ -4,20 +4,43 @@
     {
       "name": "pdfmaster",
       "runtimeExecutable": "C:/ashish/editing/backend/.venv/Scripts/python.exe",
-      "runtimeArgs": ["-m", "uvicorn", "pdfmaster.api:app", "--app-dir", "C:/ashish/editing/backend", "--host", "127.0.0.1", "--port", "8000"],
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "pdfmaster.api:app",
+        "--app-dir",
+        "C:/ashish/editing/backend",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000"
+      ],
       "port": 8000
     },
     {
       "name": "pdfmaster-hosted",
       "runtimeExecutable": "C:/ashish/editing/backend/.venv/Scripts/python.exe",
-      "runtimeArgs": ["C:/ashish/editing/backend/run_hosted.py"],
+      "runtimeArgs": [
+        "C:/ashish/editing/backend/run_hosted.py"
+      ],
       "port": 8001
     },
     {
       "name": "pdfmaster-test",
       "runtimeExecutable": "C:/ashish/editing/backend/.venv/Scripts/python.exe",
-      "runtimeArgs": ["C:/ashish/editing/backend/run_test.py"],
+      "runtimeArgs": [
+        "C:/ashish/editing/backend/run_test.py"
+      ],
       "port": 8002
+    },
+    {
+      "name": "pdfmaster-test-alt",
+      "runtimeExecutable": "C:/ashish/editing/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "C:/ashish/editing/backend/run_test.py",
+        "8004"
+      ],
+      "port": 8004
     }
   ]
 }

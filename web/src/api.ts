@@ -48,6 +48,14 @@ export const creativeApi = {
   }),
 };
 
+/** Resume & Career Studio profile, versions and cover letter for this browser / account (photo stays in the browser). */
+export const resumeApi = {
+  get: () => call<{ data: Record<string, unknown>; updatedAt: string } | null>("/resume"),
+  put: (data: Record<string, unknown>) => call<{ updatedAt: string }>("/resume", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data }),
+  }),
+};
+
 const json = (data: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },

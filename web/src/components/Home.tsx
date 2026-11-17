@@ -14,9 +14,10 @@ import ThemeToggle from "./ThemeToggle";
 const Creative = lazy(() => import("./Creative"));
 const ImageEditor = lazy(() => import("./ImageEditor"));
 const Tools = lazy(() => import("./Tools"));
+const Resume = lazy(() => import("./Resume"));
 const loading = <main className="home-main"><p className="muted" role="status">Loading…</p></main>;
 
-type Tab = "home" | "photo" | "pdf" | "checklist" | "creative" | "tools";
+type Tab = "home" | "photo" | "pdf" | "checklist" | "creative" | "resume" | "tools";
 /** Which hub quick tool a PDF picker was opened for. */
 type Quick = "edit" | "images" | "compress" | "split" | "tojpg" | "merge";
 
@@ -36,7 +37,7 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
   useLang();
   const [tab, setTab] = useState<Tab>(() => {
     const t = sessionStorage.getItem("homeTab");
-    return t === "photo" || t === "pdf" || t === "checklist" || t === "creative" || t === "tools" ? t : "home";
+    return t === "photo" || t === "pdf" || t === "checklist" || t === "creative" || t === "resume" || t === "tools" ? t : "home";
   });
   const go = (id: Tab) => {
     setTab(id);
@@ -211,7 +212,7 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
       <header className="home-head">
         <button className="brand brand-link" onClick={() => go("home")}><Logo size={34} /> <span className="wordmark">Form<b>Easy</b></span></button>
         <nav className="home-tabs" role="tablist">
-          {([["home", "🏠 Home"], ["photo", "🪪 Photo & Signature"], ["pdf", "📄 PDF Studio"], ["checklist", "📋 Checklist"], ["creative", "🎨 Creative Studio"], ["tools", "🧰 Tools"]] as const).map(([id, label]) => (
+          {([["home", "🏠 Home"], ["photo", "🪪 Photo & Signature"], ["pdf", "📄 PDF Studio"], ["checklist", "📋 Checklist"], ["creative", "🎨 Creative Studio"], ["resume", "💼 Resume"], ["tools", "🧰 Tools"]] as const).map(([id, label]) => (
             <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => go(id)}>{t(label)}</button>
           ))}
         </nav>
@@ -253,6 +254,12 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
               <span className="hub-icon">🎨</span>
               <strong>{t("Creative Studio")}</strong>
               <span className="muted small">{t("Wedding cards, festival greetings, invitations, business posters, visiting cards and certificates, ready to print or share on WhatsApp.")}</span>
+              <span className="hub-go">{t("Open")} <i>→</i></span>
+            </button>
+            <button className="hub-card rs-card" onClick={() => go("resume")}>
+              <span className="hub-icon">💼</span>
+              <strong>{t("Resume & Career Studio")}</strong>
+              <span className="muted small">{t("Resumes for freshers, experienced and government jobs: 19 templates, ATS check, job description match, cover letters. PDF and Word.")}</span>
               <span className="hub-go">{t("Open")} <i>→</i></span>
             </button>
             <button className="hub-card" onClick={() => go("tools")}>
@@ -303,7 +310,7 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
             onCompress={() => pickPdf("compress")} onScan={() => pictures.current?.click()} />
           <div className="home-main" style={{ marginTop: 0 }}>{feedback}</div>
         </>
-      ) : tab === "creative" ? <Suspense fallback={loading}><Creative /></Suspense> : tab === "tools" ? <Suspense fallback={loading}><Tools /></Suspense> : tab === "photo" ? <main className="home-wide"><Suspense fallback={loading}><ImageEditor key={photoPreset?.n} preset={photoPreset?.name} /></Suspense></main> : (
+      ) : tab === "creative" ? <Suspense fallback={loading}><Creative /></Suspense> : tab === "resume" ? <Suspense fallback={loading}><Resume /></Suspense> : tab === "tools" ? <Suspense fallback={loading}><Tools /></Suspense> : tab === "photo" ? <main className="home-wide"><Suspense fallback={loading}><ImageEditor key={photoPreset?.n} preset={photoPreset?.name} /></Suspense></main> : (
       <main className="home-main">
         <h1>{t("Edit PDF text exactly where it is")}</h1>
         <p className="lede">{t("Change a word, a figure or a name. The original font, size, colour and position are kept, and every edit is checked against the original page.")}</p>

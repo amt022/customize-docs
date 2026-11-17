@@ -4,6 +4,7 @@ Same app as the desktop build, but its documents live in backend/data-test, so n
 the real ones in backend/data. Delete the folder to start clean.
 """
 import os
+import sys
 from pathlib import Path
 
 import uvicorn
@@ -12,4 +13,4 @@ here = Path(__file__).resolve().parent
 os.environ.setdefault("PDFMASTER_DATA", str(here / "data-test"))
 
 if __name__ == "__main__":
-    uvicorn.run("pdfmaster.api:app", app_dir=str(here), host="127.0.0.1", port=8002)
+    uvicorn.run("pdfmaster.api:app", app_dir=str(here), host="127.0.0.1", port=int(sys.argv[1] if len(sys.argv) > 1 else os.environ.get("PORT", "8002")))

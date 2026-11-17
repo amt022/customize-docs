@@ -86,6 +86,11 @@ CREATE TABLE IF NOT EXISTS creative_state (
     owner TEXT PRIMARY KEY,
     data TEXT NOT NULL,
     updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS resume_state (
+    owner TEXT PRIMARY KEY,
+    data TEXT NOT NULL,
+    updated_at TEXT NOT NULL
 )
 """
 # columns added after the first release; created on old databases at start-up
@@ -255,37 +260,57 @@ class DocumentService:
     def reassign_owner(self, old: str, new: str) -> int:
         """Move documents to another owner (an anonymous browser signing in to an account)."""
         with self._db() as db:
-            # Creative Studio details: the account keeps its own if it has some, else takes the browser's
-            if db.execute("SELECT 1 FROM creative_state WHERE owner=?", (new,)).fetchone():
-                db.execute("DELETE FROM creative_state WHERE owner=?", (old,))
-            else:
-                db.execute("UPDATE creative_state SET owner=? WHERE owner=?", (new, old))
+            # Creative Studio / resume details: the account keeps its own if it has some, else takes the browser's
+            for table in self.STATE_TABLES:
+                if db.execute(f"SELECT 1 FROM {table} WHERE owner=?", (new,)).fetchone():
+                    db.execute(f"DELETE FROM {table} WHERE owner=?", (old,))
+                else:
+                    db.execute(f"UPDATE {table} SET owner=? WHERE owner=?", (new, old))
             return db.execute("UPDATE documents SET owner=? WHERE owner=?", (new, old)).rowcount
 
-    # ----------------------------------------------------------------- Creative Studio details
+    # ----------------------------------------------------------------- Creative Studio / resume details
     CREATIVE_MAX = 512 * 1024  # names, dates, venues and on-card edits; photos stay in the browser
+    # per-owner JSON kept for a studio in the browser: table name -> message when too big
+    STATE_TABLES = {
+        "creative_state": "Too much design data to save. Undo some on-card changes and try again.",
+        "resume_state": "Too much resume data to save. Remove some resume versions and try again.",
+    }
 
-    def get_creative(self) -> Optional[dict]:
+    def _get_state(self, table: str) -> Optional[dict]:
         with self._db() as db:
-            row = db.execute("SELECT data, updated_at FROM creative_state WHERE owner=?", (current_owner.get(),)).fetchone()
+            row = db.execute(f"SELECT data, updated_at FROM {table} WHERE owner=?", (current_owner.get(),)).fetchone()
         return {"data": json.loads(row["data"]), "updatedAt": row["updated_at"]} if row else None
 
-    def put_creative(self, data: dict) -> dict:
+    def _put_state(self, table: str, data: dict) -> dict:
         raw = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
         if len(raw.encode("utf-8")) > self.CREATIVE_MAX:
-            raise ValueError("Too much design data to save. Undo some on-card changes and try again.")
+            raise ValueError(self.STATE_TABLES[table])
         now = _now()
         with self._db() as db:
             db.execute(
-                "INSERT INTO creative_state (owner, data, updated_at) VALUES (?, ?, ?) "
+                f"INSERT INTO {table} (owner, data, updated_at) VALUES (?, ?, ?) "
                 "ON CONFLICT(owner) DO UPDATE SET data=excluded.data, updated_at=excluded.updated_at",
                 (current_owner.get(), raw, now),
             )
         return {"updatedAt": now}
 
+    def get_creative(self) -> Optional[dict]:
+        return self._get_state("creative_state")
+
+    def put_creative(self, data: dict) -> dict:
+        return self._put_state("creative_state", data)
+
+    def get_resume(self) -> Optional[dict]:
+        """Resume & Career Studio profile, resume versions and cover letter (the photo stays in the browser)."""
+        return self._get_state("resume_state")
+
+    def put_resume(self, data: dict) -> dict:
+        return self._put_state("resume_state", data)
+
     def delete_owner(self, owner: str) -> int:
         with self._db() as db:
-            db.execute("DELETE FROM creative_state WHERE owner=?", (owner,))
+            for table in self.STATE_TABLES:
+                db.execute(f"DELETE FROM {table} WHERE owner=?", (owner,))
             ids = [r["id"] for r in db.execute("SELECT id FROM documents WHERE owner=?", (owner,)).fetchall()]
         for doc_id in ids:
             self._remove(doc_id)
@@ -296,7 +321,8 @@ class DocumentService:
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat(timespec="seconds")
         which = "" if accounts is None else " AND owner LIKE 'u:%'" if accounts else " AND owner NOT LIKE 'u:%'"
         with self._db() as db:
-            db.execute("DELETE FROM creative_state WHERE updated_at < ?" + which, (cutoff,))
+            for table in self.STATE_TABLES:
+                db.execute(f"DELETE FROM {table} WHERE updated_at < ?" + which, (cutoff,))
             ids = [r["id"] for r in db.execute("SELECT id FROM documents WHERE updated_at < ?" + which, (cutoff,)).fetchall()]
         for doc_id in ids:
             try:

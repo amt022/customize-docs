@@ -421,6 +421,20 @@ def put_creative(body: CreativeIn):
         raise HTTPException(413, str(e))
 
 
+@app.get(f"{API}/resume")
+def get_resume():
+    """Saved Resume & Career Studio details (profile, resume versions, cover letter) of this browser / account."""
+    return ok(service.get_resume())
+
+
+@app.put(f"{API}/resume")
+def put_resume(body: CreativeIn):
+    try:
+        return ok(service.put_resume(body.data), "Saved")
+    except ValueError as e:
+        raise HTTPException(413, str(e))
+
+
 @app.get(f"{API}/trash")
 def list_trash():
     return ok(service.trash())
