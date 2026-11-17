@@ -18,6 +18,7 @@ import PropertiesPanel from "./PropertiesPanel";
 import SignaturePad from "./SignaturePad";
 import Thumbnails, { type PageActions } from "./Thumbnails";
 import Viewer from "./Viewer";
+import { t } from "../i18n";
 
 type View = "edit" | "original" | "diff";
 type Modal = null | "export" | "watermark" | "extract" | "stamp" | "note" | "signature" | "image" | "insert";
@@ -425,7 +426,7 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
   });
 
   if (!doc || !pdf) {
-    return <div className="loading-screen">Opening document…</div>;
+    return <div className="loading-screen">{t("Opening document…")}</div>;
   }
 
   const pageHits = hits.filter((h) => h.page === page).map((h) => h.glyphs);
@@ -437,16 +438,16 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
   return (
     <div className="app" onClick={() => menu && setMenu(null)}>
       <header className="toolbar">
-        <button className="brand-btn" onClick={onClose} title="Back to FormEasy"><Logo size={30} /></button>
+        <button className="brand-btn" onClick={onClose} title={t("Back to FormEasy")}><Logo size={30} /></button>
         <div className="doc-name" title={doc.original_name}>{doc.original_name}</div>
         <div className="tool-group">
-          <button className="btn ghost" onClick={() => undoRedo("undo")} disabled={!doc.canUndo || busy} title="Undo (Ctrl+Z)" aria-label="Undo">↶<span className="lbl"> Undo</span></button>
-          <button className="btn ghost" onClick={() => undoRedo("redo")} disabled={!doc.canRedo || busy} title="Redo (Ctrl+Y)" aria-label="Redo">↷<span className="lbl"> Redo</span></button>
+          <button className="btn ghost" onClick={() => undoRedo("undo")} disabled={!doc.canUndo || busy} title={t("Undo (Ctrl+Z)")} aria-label={t("Undo")}>↶<span className="lbl"> {t("Undo")}</span></button>
+          <button className="btn ghost" onClick={() => undoRedo("redo")} disabled={!doc.canRedo || busy} title={t("Redo (Ctrl+Y)")} aria-label={t("Redo")}>↷<span className="lbl"> {t("Redo")}</span></button>
         </div>
         <div className="tool-group tools-main">
-          <button className={"btn ghost" + (tool === "edit" ? " active-tool" : "")} onClick={() => setTool("edit")} title="Select and edit text">𝐓 Edit text</button>
-          <button className={"btn ghost" + (tool === "images" ? " active-tool" : "")} title="Move, resize, replace or insert pictures"
-            onClick={() => { setMenu(null); setSelection(null); setEditing(false); setView("edit"); setTool(tool === "images" ? "edit" : "images"); }}>🖼 Images</button>
+          <button className={"btn ghost" + (tool === "edit" ? " active-tool" : "")} onClick={() => setTool("edit")} title={t("Select and edit text")}>{t("𝐓 Edit text")}</button>
+          <button className={"btn ghost" + (tool === "images" ? " active-tool" : "")} title={t("Move, resize, replace or insert pictures")}
+            onClick={() => { setMenu(null); setSelection(null); setEditing(false); setView("edit"); setTool(tool === "images" ? "edit" : "images"); }}>{t("🖼 Images")}</button>
           <div className="menu-wrap" onClick={(e) => e.stopPropagation()}>
             <button className={"btn ghost" + (tool !== "edit" && tool !== "images" ? " active-tool" : "")} onClick={() => setMenu(menu === "annotate" ? null : "annotate")}>
               {tool !== "edit" && tool !== "images" ? `${TOOLS.find((t) => t.id === tool)?.icon} ${TOOLS.find((t) => t.id === tool)?.label}` : "✎ Annotate"} ▾
@@ -455,36 +456,36 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
               <div className="menu">
                 {TOOLS.map((t) => <button key={t.id} onClick={() => chooseTool(t.id)}><span className="mi">{t.icon}</span>{t.label}</button>)}
                 <hr />
-                <button onClick={() => { setMenu(null); setModal("watermark"); }}><span className="mi">⧉</span>Watermark…</button>
+                <button onClick={() => { setMenu(null); setModal("watermark"); }}><span className="mi">⧉</span>{t("Watermark…")}</button>
               </div>
             )}
           </div>
           <div className="menu-wrap" onClick={(e) => e.stopPropagation()}>
-            <button className="btn ghost" onClick={() => setMenu(menu === "pages" ? null : "pages")}>▤ Pages ▾</button>
+            <button className="btn ghost" onClick={() => setMenu(menu === "pages" ? null : "pages")}>{t("▤ Pages ▾")}</button>
             {menu === "pages" && (
               <div className="menu">
-                <button onClick={() => { setMenu(null); pageActions.rotate(page, 90); }}><span className="mi">↻</span>Rotate this page</button>
-                <button onClick={() => { setMenu(null); act((v) => api.pageOp(id, { op: "insert-blank", after: page, baseVersion: v }), "Blank page inserted"); }}><span className="mi">＋</span>Insert blank page after</button>
-                <button onClick={() => { setMenu(null); insertInput.current?.click(); }}><span className="mi">⇣</span>Insert PDF after this page…</button>
-                <button onClick={() => { setMenu(null); setModal("extract"); }}><span className="mi">⇱</span>Extract / split pages…</button>
+                <button onClick={() => { setMenu(null); pageActions.rotate(page, 90); }}><span className="mi">↻</span>{t("Rotate this page")}</button>
+                <button onClick={() => { setMenu(null); act((v) => api.pageOp(id, { op: "insert-blank", after: page, baseVersion: v }), "Blank page inserted"); }}><span className="mi">＋</span>{t("Insert blank page after")}</button>
+                <button onClick={() => { setMenu(null); insertInput.current?.click(); }}><span className="mi">⇣</span>{t("Insert PDF after this page…")}</button>
+                <button onClick={() => { setMenu(null); setModal("extract"); }}><span className="mi">⇱</span>{t("Extract / split pages…")}</button>
                 <hr />
-                <button disabled={doc.page_count === 1} onClick={() => { setMenu(null); pageActions.remove(page); }}><span className="mi">🗑</span>Delete this page</button>
+                <button disabled={doc.page_count === 1} onClick={() => { setMenu(null); pageActions.remove(page); }}><span className="mi">🗑</span>{t("Delete this page")}</button>
               </div>
             )}
             <input ref={insertInput} type="file" accept="application/pdf,.pdf" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) insertPdf(f); }} />
           </div>
-          <button className={"btn ghost" + (findOpen ? " active-tool" : "")} onClick={() => { setFindSeed(""); setFindOpen((o) => !o); }} title="Find & replace (Ctrl+F)">⇄ Find &amp; replace</button>
-          <button className={"btn ghost" + (checkOpen ? " active-tool" : "")} onClick={() => { setChatOpen(false); setCheckOpen((o) => !o); }} title="Find errors in the PDF and in your edits">✓ Check</button>
-          <button className={"btn ghost" + (chatOpen ? " active-tool" : "")} onClick={() => { setCheckOpen(false); setChatOpen((o) => !o); }} title="Ask the assistant to read or change the document">✦ Assistant</button>
+          <button className={"btn ghost" + (findOpen ? " active-tool" : "")} onClick={() => { setFindSeed(""); setFindOpen((o) => !o); }} title={t("Find & replace (Ctrl+F)")}>⇄ Find &amp; replace</button>
+          <button className={"btn ghost" + (checkOpen ? " active-tool" : "")} onClick={() => { setChatOpen(false); setCheckOpen((o) => !o); }} title={t("Find errors in the PDF and in your edits")}>{t("✓ Check")}</button>
+          <button className={"btn ghost" + (chatOpen ? " active-tool" : "")} onClick={() => { setCheckOpen(false); setChatOpen((o) => !o); }} title={t("Ask the assistant to read or change the document")}>{t("✦ Assistant")}</button>
         </div>
         <div className="segmented view-switch" role="tablist">
-          <button className={view === "edit" ? "on" : ""} onClick={() => setView("edit")}>Edit</button>
-          <button className={view === "original" ? "on" : ""} onClick={() => setView("original")} disabled={doc.current_version === 0}>Original</button>
-          <button className={view === "diff" ? "on" : ""} onClick={() => setView("diff")} disabled={doc.current_version === 0}>Changes</button>
+          <button className={view === "edit" ? "on" : ""} onClick={() => setView("edit")}>{t("Edit")}</button>
+          <button className={view === "original" ? "on" : ""} onClick={() => setView("original")} disabled={doc.current_version === 0}>{t("Original")}</button>
+          <button className={view === "diff" ? "on" : ""} onClick={() => setView("diff")} disabled={doc.current_version === 0}>{t("Changes")}</button>
         </div>
         <span className="spacer" />
         <ThemeToggle />
-        <button className="btn primary" onClick={() => setModal("export")}>⭳ Download</button>
+        <button className="btn primary" onClick={() => setModal("export")}>{t("⭳ Download")}</button>
       </header>
 
       {findOpen && (
@@ -510,25 +511,25 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
         <main className="canvas-area" ref={canvasRef}>
           {view === "edit" && model?.type === "scanned" && !isScan && (
             <div className="scan-banner">
-              <strong>Scanned page.</strong>{" "}
+              <strong>{t("Scanned page.")}</strong>{" "}
               {model.ocrAvailable ? (
                 ocrJob ? <>Recognising text… {Math.round(ocrJob.progress * 100)}%</>
-                  : <>Recognise the text (English + Hindi) to edit words on this page. <button className="btn small primary" onClick={runOcr}>Recognise text</button>
+                  : <>Recognise the text (English + Hindi) to edit words on this page. <button className="btn small primary" onClick={runOcr}>{t("Recognise text")}</button>
                     <button className={"btn small" + (marking ? " primary" : "")} disabled={busy}
                 onClick={() => { setMarking(!marking); setSelection(null); setEditing(false); setTool("edit"); }}>
                 {marking ? "Cancel marking" : "Word not clickable? Mark it"}
               </button>
               {marking && <span className="muted"> Drag a box closely around the word (one word or one line), then type what it says.</span>}</>
               ) : (
-                <>Editing scanned text needs the Tesseract OCR engine, which isn't installed. Install it once (e.g. <code>winget install UB-Mannheim.TesseractOCR</code>), then reopen this page.</>
+                <>Editing scanned text needs the Tesseract OCR engine, which isn't installed. Install it once (e.g. <code>{t("winget install UB-Mannheim.TesseractOCR")}</code>), then reopen this page.</>
               )}
             </div>
           )}
           {view === "edit" && model?.type === "outlined" && (
             <div className="scan-banner">
-              <strong>This page's text is drawn as shapes</strong> (for example a PDF made with “Microsoft Print to PDF”), so its words can't be clicked yet.{" "}
+              <strong>{t("This page's text is drawn as shapes")}</strong> (for example a PDF made with “Microsoft Print to PDF”), so its words can't be clicked yet.{" "}
               {ocrJob ? <>Recognising text… {Math.round(ocrJob.progress * 100)}%</>
-                : <button className="btn small primary" disabled={busy} onClick={makeEditable}>Make text editable</button>}
+                : <button className="btn small primary" disabled={busy} onClick={makeEditable}>{t("Make text editable")}</button>}
               <span className="muted"> Turns such pages into a sharp 300 dpi scan and recognises the words; Undo brings the original back.</span>
             </div>
           )}
@@ -536,8 +537,8 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
             <div className="scan-banner info">
               <strong>Scanned page · {model?.ocr?.words} words recognised</strong>
               {model?.ocr?.meanConfidence != null && <> (confidence {model.ocr.meanConfidence}%)</>}. Click a word to edit it, Shift+click to select several words (e.g. a whole phone number); the scan is patched to match.
-              <span className="forgery-note"> Only correct documents that are yours to change: altering certificates, marksheets or ID cards is forgery and a crime.</span>
-              <button className="btn small" onClick={() => act((v) => api.textLayer(id, v), "PDF is now searchable")}>Make searchable</button>
+              <span className="forgery-note"> {t("Only correct documents that are yours to change: altering certificates, marksheets or ID cards is forgery and a crime.")}</span>
+              <button className="btn small" onClick={() => act((v) => api.textLayer(id, v), "PDF is now searchable")}>{t("Make searchable")}</button>
               <button className={"btn small" + (marking ? " primary" : "")} disabled={busy}
                 onClick={() => { setMarking(!marking); setSelection(null); setEditing(false); setTool("edit"); }}>
                 {marking ? "Cancel marking" : "Word not clickable? Mark it"}
@@ -586,7 +587,7 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
           {view === "diff" && (
             <figure className="compare-view">
               <img src={api.compareUrl(id, page, 0, doc.current_version)} alt="Changes" style={{ width: (model ? (model.box[2] - model.box[0]) : 612) * zoom }} />
-              <figcaption><span className="legend removed" /> removed <span className="legend added" /> added · original vs current version {doc.current_version}</figcaption>
+              <figcaption><span className="legend removed" /> {t("removed")} <span className="legend added" /> added · original vs current version {doc.current_version}</figcaption>
             </figure>
           )}
         </main>
@@ -625,7 +626,7 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
       </div>
 
       {markBox && (
-        <PromptDialog title="What does this text say?" label="Text inside your box, as printed now" initial="" confirm="Add word"
+        <PromptDialog title={t("What does this text say?")} label="Text inside your box, as printed now" initial="" confirm="Add word"
           hint="For example the name. It becomes a word you can click and change, drawn in the same lettering."
           onOk={(v) => addMarked(v)} onClose={() => setMarkBox(null)} />
       )}
@@ -642,7 +643,7 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
           <button className="btn ghost small" onClick={() => zoomBy(1.2)}>+</button>
         </div>
         <span className="status-item">{model ? `${isScan ? "scanned (OCR)" : model.type} page · ${model.glyphs.length} ${isScan ? "words" : "characters"}` : "Reading page…"}</span>
-        {doc.is_signed ? <span className="status-item warn-text">Signed PDF: edits invalidate the signature</span> : null}
+        {doc.is_signed ? <span className="status-item warn-text">{t("Signed PDF: edits invalidate the signature")}</span> : null}
         <span className="spacer" />
         <span className="status-item">{busy ? "Saving…" : `Version ${doc.current_version}${doc.current_version ? "" : " (original)"}`}</span>
       </footer>
@@ -683,7 +684,7 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
           onRemove={() => { setModal(null); act((v) => api.watermark(id, { remove: true, baseVersion: v }), "Watermark removed"); }} />
       )}
       {modal === "extract" && (
-        <PromptDialog title="Extract pages" label="Pages" initial={`${page}`} confirm="Create"
+        <PromptDialog title={t("Extract pages")} label="Pages" initial={`${page}`} confirm="Create"
           hint={`For example 1-3, 5 (document has ${doc.page_count} pages). A new document is created; this one is unchanged.`}
           extra="One document per page (split)"
           onClose={() => setModal(null)}
@@ -698,12 +699,12 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
           }} />
       )}
       {modal === "stamp" && (
-        <PromptDialog title="Stamp" label="Stamp text" initial={stampText} confirm="Place stamp"
+        <PromptDialog title={t("Stamp")} label="Stamp text" initial={stampText} confirm="Place stamp"
           hint="Then drag on the page where the stamp should go." onClose={() => setModal(null)}
           onOk={(t) => { setStampText(t); setModal(null); setTool("stamp"); }} />
       )}
       {modal === "note" && pendingNote && (
-        <PromptDialog title="Add note" label="Comment" initial="" confirm="Add note" onClose={() => { setModal(null); setPendingNote(null); }}
+        <PromptDialog title={t("Add note")} label="Comment" initial="" confirm="Add note" onClose={() => { setModal(null); setPendingNote(null); }}
           onOk={(t) => { setModal(null); annotate({ type: "note", x: pendingNote.x, y: pendingNote.y, text: t }); setPendingNote(null); }} />
       )}
       {(modal === "signature" || modal === "image") && (

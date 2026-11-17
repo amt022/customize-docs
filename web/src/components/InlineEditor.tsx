@@ -4,6 +4,7 @@ import type { PageViewport } from "pdfjs-dist";
 import type { EditResponse, FontInfo, GlyphInfo } from "../types";
 import { cssFontFamily, toViewRect, unionBox } from "../pdf";
 import CheckSummary from "./CheckSummary";
+import { t } from "../i18n";
 
 interface Props {
   viewport: PageViewport;
@@ -60,12 +61,12 @@ export default function InlineEditor({ viewport, glyphs, ids, font, initial, pre
       />
       {createPortal(
       <div className="edit-dock" onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.preventDefault()}>
-        <span className="dock-label">Editing</span>
+        <span className="dock-label">{t("Editing")}</span>
         <CheckSummary preview={preview} error={previewError} checking={checking} compact />
         <div className="inline-actions">
-          <span className="kbd-hint">Enter to apply · Esc to cancel</span>
-          <button className="btn small" onClick={onCancel}>Cancel</button>
-          <button className="btn small primary" disabled={!!previewError} onClick={() => onApply(text)}>Apply</button>
+          <span className="kbd-hint">{t("Enter to apply · Esc to cancel")}</span>
+          <button className="btn small" onClick={onCancel}>{t("Cancel")}</button>
+          <button className="btn small primary" disabled={!!previewError} onClick={() => onApply(text)}>{t("Apply")}</button>
         </div>
       </div>, document.body)}
     </div>

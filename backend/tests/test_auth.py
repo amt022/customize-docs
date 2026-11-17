@@ -263,3 +263,29 @@ def test_visitor_address_comes_from_the_cloudflare_header_when_configured(hosted
     monkeypatch.setattr(hosted, "_CLIENT_IP_HEADER", "cf-connecting-ip")
     c.post("/api/v1/auth/code", json={"phone": "98765 43211"}, headers={"cf-connecting-ip": "203.0.113.7"})
     assert seen[-1] == "203.0.113.7"
+
+
+def test_creative_studio_details_are_private_follow_the_account_and_are_erased(hosted):
+    laptop, phone, stranger = TestClient(hosted.app), TestClient(hosted.app), TestClient(hosted.app)
+    assert laptop.get("/api/v1/creative").json()["data"] is None
+    state = {"details": {"bride": "Ananya", "groom": "Rohan"}, "edits": {"wedding:wedding": {"amp": {"dx": 40}}}}
+    r = laptop.put("/api/v1/creative", json={"data": state})
+    assert r.status_code == 200, r.text
+    assert laptop.get("/api/v1/creative").json()["data"]["data"] == state
+    assert stranger.get("/api/v1/creative").json()["data"] is None  # other browsers never see it
+
+    # signing in takes the browser's designs to the account, so another device signed in sees them
+    _sign_in(hosted, laptop)
+    _sign_in(hosted, phone)
+    assert phone.get("/api/v1/creative").json()["data"]["data"] == state
+
+    # too much data is refused with a plain message
+    big = {"x": "a" * (600 * 1024)}
+    r = phone.put("/api/v1/creative", json={"data": big})
+    assert r.status_code == 413 and "Too much" in r.json()["message"]
+
+    # deleting the account erases them
+    assert phone.delete("/api/v1/auth/account").status_code == 200
+    fresh = TestClient(hosted.app)
+    _sign_in(hosted, fresh)
+    assert fresh.get("/api/v1/creative").json()["data"] is None

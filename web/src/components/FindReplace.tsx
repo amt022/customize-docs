@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import type { Anchor, FindHit, FindReplaceResponse, Fit } from "../types";
+import { t } from "../i18n";
 
 interface Props {
   docId: string;
@@ -56,23 +57,23 @@ export default function FindReplace({ docId, version, anchor, fit, onHits, onGot
   return (
     <div className="find-panel" onKeyDown={(e) => e.key === "Escape" && onClose()}>
       <div className="find-row">
-        <input autoFocus={!initialQuery} placeholder="Find" value={query} onChange={(e) => { setQuery(e.target.value); setHits(null); }}
+        <input autoFocus={!initialQuery} placeholder={t("Find")} value={query} onChange={(e) => { setQuery(e.target.value); setHits(null); }}
           onKeyDown={(e) => e.key === "Enter" && search()} />
-        <input autoFocus={!!initialQuery} placeholder="Replace with" value={replacement} onChange={(e) => setReplacement(e.target.value)}
+        <input autoFocus={!!initialQuery} placeholder={t("Replace with")} value={replacement} onChange={(e) => setReplacement(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && e.ctrlKey && replaceAll()} />
       </div>
       <div className="find-row">
-        <label><input type="checkbox" checked={matchCase} onChange={(e) => setMatchCase(e.target.checked)} /> Match case</label>
-        <label><input type="checkbox" checked={wholeWord} onChange={(e) => setWholeWord(e.target.checked)} /> Whole word</label>
+        <label><input type="checkbox" checked={matchCase} onChange={(e) => setMatchCase(e.target.checked)} /> {t("Match case")}</label>
+        <label><input type="checkbox" checked={wholeWord} onChange={(e) => setWholeWord(e.target.checked)} /> {t("Whole word")}</label>
         <span className="spacer" />
-        <button className="btn" onClick={search} disabled={busy || !query}>Find</button>
-        <button className="btn primary" onClick={replaceAll} disabled={busy || !query}>Replace all</button>
-        <span className="muted small">Ctrl+Enter</span>
-        <button className="btn ghost" onClick={onClose} aria-label="Close">✕</button>
+        <button className="btn" onClick={search} disabled={busy || !query}>{t("Find")}</button>
+        <button className="btn primary" onClick={replaceAll} disabled={busy || !query}>{t("Replace all")}</button>
+        <span className="muted small">{t("Ctrl+Enter")}</span>
+        <button className="btn ghost" onClick={onClose} aria-label={t("Close")}>✕</button>
       </div>
       {hits && (
         <div className="hits">
-          {hits.length === 0 ? <span className="muted">No matches</span> : (
+          {hits.length === 0 ? <span className="muted">{t("No matches")}</span> : (
             <>
               <span className="muted">{hits.length} match{hits.length > 1 ? "es" : ""}</span>
               {hits.slice(0, 50).map((h, i) => (

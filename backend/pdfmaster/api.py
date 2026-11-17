@@ -403,6 +403,24 @@ def delete_document(doc_id: str):
     return ok(None, "Moved to Recently deleted")
 
 
+class CreativeIn(BaseModel):
+    data: dict
+
+
+@app.get(f"{API}/creative")
+def get_creative():
+    """Saved Creative Studio details (names, dates, venues, on-card edits) of this browser / account."""
+    return ok(service.get_creative())
+
+
+@app.put(f"{API}/creative")
+def put_creative(body: CreativeIn):
+    try:
+        return ok(service.put_creative(body.data), "Saved")
+    except ValueError as e:
+        raise HTTPException(413, str(e))
+
+
 @app.get(f"{API}/trash")
 def list_trash():
     return ok(service.trash())

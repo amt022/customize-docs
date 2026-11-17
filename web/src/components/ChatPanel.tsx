@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type ChatAction } from "../api";
+import { t } from "../i18n";
 
 interface Msg {
   role: "user" | "assistant" | "error";
@@ -50,27 +51,27 @@ export default function ChatPanel({ docId, onChanged, onClose }: { docId: string
   return (
     <aside className="props chat">
       <header className="chat-head">
-        <h3>✦ Assistant</h3>
+        <h3>{t("✦ Assistant")}</h3>
         <span className="spacer" />
         {msgs.length > 0 && (
-          <button className="btn ghost small" title="New conversation" onClick={() => {
+          <button className="btn ghost small" title={t("New conversation")} onClick={() => {
             if (conversation) api.resetChat(conversation).catch(() => undefined);
             setConversation(undefined);
             setMsgs([]);
-          }}>New chat</button>
+          }}>{t("New chat")}</button>
         )}
-        <button className="btn ghost small" onClick={onClose} aria-label="Close assistant">✕</button>
+        <button className="btn ghost small" onClick={onClose} aria-label={t("Close assistant")}>✕</button>
       </header>
       <div className="chat-body">
         {unavailable && (
           <div className="chat-setup">
-            <strong>The assistant needs a Claude API key.</strong> Set <code>ANTHROPIC_API_KEY</code> for the server
-            (for example <code>$env:ANTHROPIC_API_KEY="sk-ant-…"</code> before <code>start.ps1</code>) and restart it.
+            <strong>{t("The assistant needs a Claude API key.")}</strong> {t("Set")} <code>ANTHROPIC_API_KEY</code> for the server
+            (for example <code>$env:ANTHROPIC_API_KEY="sk-ant-…"</code> {t("before")} <code>{t("start.ps1")}</code>) and restart it.
           </div>
         )}
         {msgs.length === 0 && (
           <div className="chat-empty">
-            <p>Ask about this PDF or tell me what to change. Every change keeps the original layout and can be undone.</p>
+            <p>{t("Ask about this PDF or tell me what to change. Every change keeps the original layout and can be undone.")}</p>
             <div className="chat-suggestions">
               {SUGGESTIONS.map((s) => <button key={s} className="hit-chip" onClick={() => send(s)}>{s}</button>)}
             </div>
@@ -92,13 +93,13 @@ export default function ChatPanel({ docId, onChanged, onClose }: { docId: string
       <form className="chat-input" onSubmit={(e) => { e.preventDefault(); send(input); }}>
         <textarea
           rows={2}
-          placeholder="e.g. Change the customer name to Rahul Tripathi"
+          placeholder={t("e.g. Change the customer name to Rahul Tripathi")}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
           disabled={busy}
         />
-        <button className="btn primary" type="submit" disabled={busy || !input.trim()}>Send</button>
+        <button className="btn primary" type="submit" disabled={busy || !input.trim()}>{t("Send")}</button>
       </form>
     </aside>
   );

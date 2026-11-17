@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PageImage } from "../types";
+import { t } from "../i18n";
 
 type Unit = "pt" | "in" | "cm" | "mm";
 const PER_PT: Record<Unit, number> = { pt: 1, in: 1 / 72, cm: 2.54 / 72, mm: 25.4 / 72 };
@@ -84,14 +85,14 @@ export default function ImagePanel({ images, selected, pageBox, lockAspect, busy
   return (
     <aside className="props images-panel">
       <header className="chat-head">
-        <h3>🖼 Images</h3>
+        <h3>{t("🖼 Images")}</h3>
         <span className="spacer" />
-        <button className="btn ghost small" onClick={onClose} aria-label="Close image tools">✕</button>
+        <button className="btn ghost small" onClick={onClose} aria-label={t("Close image tools")}>✕</button>
       </header>
       <div className="images-body">
-        <button className="btn primary" onClick={onInsert} disabled={busy}>＋ Insert image…</button>
-        {images.length === 0 && <p className="muted small">This page has no pictures. Insert one, then drag it into place and resize it.</p>}
-        {images.length > 0 && !img && <p className="muted small">Click a picture on the page to move or resize it, or choose one below.</p>}
+        <button className="btn primary" onClick={onInsert} disabled={busy}>{t("＋ Insert image…")}</button>
+        {images.length === 0 && <p className="muted small">{t("This page has no pictures. Insert one, then drag it into place and resize it.")}</p>}
+        {images.length > 0 && !img && <p className="muted small">{t("Click a picture on the page to move or resize it, or choose one below.")}</p>}
 
         {images.length > 0 && (
           <ul className="img-list">
@@ -112,11 +113,11 @@ export default function ImagePanel({ images, selected, pageBox, lockAspect, busy
               {field("x", "X")}{field("y", "Y")}{field("w", "Width")}{field("h", "Height")}
             </div>
             <div className="img-row">
-              <select value={unit} onChange={(e) => setUnit(e.target.value as Unit)} aria-label="Units">
-                <option value="pt">points</option><option value="in">inches</option>
-                <option value="cm">cm</option><option value="mm">mm</option>
+              <select value={unit} onChange={(e) => setUnit(e.target.value as Unit)} aria-label={t("Units")}>
+                <option value="pt">{t("points")}</option><option value="in">{t("inches")}</option>
+                <option value="cm">{t("cm")}</option><option value="mm">{t("mm")}</option>
               </select>
-              <label className="check-row"><input type="checkbox" checked={lockAspect} onChange={(e) => onLock(e.target.checked)} /> Keep proportions</label>
+              <label className="check-row"><input type="checkbox" checked={lockAspect} onChange={(e) => onLock(e.target.checked)} /> {t("Keep proportions")}</label>
             </div>
             <div className="img-row">
               <button className="btn small" onClick={() => scaleBy(0.5)} disabled={busy}>50%</button>
@@ -125,14 +126,14 @@ export default function ImagePanel({ images, selected, pageBox, lockAspect, busy
               <button className="btn small" onClick={() => scaleBy(2)} disabled={busy}>200%</button>
             </div>
             <div className="img-row">
-              <button className="btn small" onClick={fitWidth} disabled={busy}>Fit width</button>
-              <button className="btn small" onClick={fitPage} disabled={busy}>Fit page</button>
-              <button className="btn small" onClick={() => onRotate(-90)} disabled={busy} title="Rotate left">↺</button>
-              <button className="btn small" onClick={() => onRotate(90)} disabled={busy} title="Rotate right">↻</button>
+              <button className="btn small" onClick={fitWidth} disabled={busy}>{t("Fit width")}</button>
+              <button className="btn small" onClick={fitPage} disabled={busy}>{t("Fit page")}</button>
+              <button className="btn small" onClick={() => onRotate(-90)} disabled={busy} title={t("Rotate left")}>↺</button>
+              <button className="btn small" onClick={() => onRotate(90)} disabled={busy} title={t("Rotate right")}>↻</button>
             </div>
             <div className="img-row">
-              <button className="btn small" onClick={onReplace} disabled={busy}>Replace picture…</button>
-              <button className="btn small danger" onClick={onDelete} disabled={busy}>Delete</button>
+              <button className="btn small" onClick={onReplace} disabled={busy}>{t("Replace picture…")}</button>
+              <button className="btn small danger" onClick={onDelete} disabled={busy}>{t("Delete")}</button>
             </div>
             <p className="muted small">
               {img.width}×{img.height} px, drawn at {img.dpi} dpi{img.dpi > 0 && img.dpi < 150 ? " — low for printing" : ""}.
@@ -141,7 +142,7 @@ export default function ImagePanel({ images, selected, pageBox, lockAspect, busy
             </p>
           </>
         )}
-        <p className="muted small tip">Drag a handle to resize. Hold <kbd>Shift</kbd> to switch proportion locking while dragging. Press <kbd>Delete</kbd> to remove the selected picture.</p>
+        <p className="muted small tip">{t("Drag a handle to resize. Hold")} <kbd>{t("Shift")}</kbd> {t("to switch proportion locking while dragging. Press")} <kbd>{t("Delete")}</kbd> {t("to remove the selected picture.")}</p>
       </div>
     </aside>
   );

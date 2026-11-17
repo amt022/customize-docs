@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import { api, ApiError, type SessionInfo } from "../api";
 import { getLang, setLang, t, useLang } from "../i18n";
 import type { DocumentInfo } from "../types";
@@ -7,11 +7,16 @@ import Checklist, { CHECKLIST_GROUPS } from "./Checklist";
 import Dialog from "./Dialog";
 import type { StartAction } from "./Editor";
 import { SiteFooter } from "./Legal";
-import ImageEditor from "./ImageEditor";
 import Logo from "./Logo";
 import ThemeToggle from "./ThemeToggle";
 
-type Tab = "home" | "photo" | "pdf" | "checklist";
+// the big tools load only when their tab is opened, so the home page opens fast on phones
+const Creative = lazy(() => import("./Creative"));
+const ImageEditor = lazy(() => import("./ImageEditor"));
+const Tools = lazy(() => import("./Tools"));
+const loading = <main className="home-main"><p className="muted" role="status">Loading…</p></main>;
+
+type Tab = "home" | "photo" | "pdf" | "checklist" | "creative" | "tools";
 /** Which hub quick tool a PDF picker was opened for. */
 type Quick = "edit" | "images" | "compress" | "split" | "tojpg" | "merge";
 
@@ -31,7 +36,7 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
   useLang();
   const [tab, setTab] = useState<Tab>(() => {
     const t = sessionStorage.getItem("homeTab");
-    return t === "photo" || t === "pdf" || t === "checklist" ? t : "home";
+    return t === "photo" || t === "pdf" || t === "checklist" || t === "creative" || t === "tools" ? t : "home";
   });
   const go = (id: Tab) => {
     setTab(id);
@@ -206,7 +211,7 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
       <header className="home-head">
         <button className="brand brand-link" onClick={() => go("home")}><Logo size={34} /> <span className="wordmark">Form<b>Easy</b></span></button>
         <nav className="home-tabs" role="tablist">
-          {([["home", "🏠 Home"], ["photo", "🪪 Photo & Signature"], ["pdf", "📄 PDF Studio"], ["checklist", "📋 Checklist"]] as const).map(([id, label]) => (
+          {([["home", "🏠 Home"], ["photo", "🪪 Photo & Signature"], ["pdf", "📄 PDF Studio"], ["checklist", "📋 Checklist"], ["creative", "🎨 Creative Studio"], ["tools", "🧰 Tools"]] as const).map(([id, label]) => (
             <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => go(id)}>{t(label)}</button>
           ))}
         </nav>
@@ -242,6 +247,18 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
               <span className="hub-icon">📋</span>
               <strong>{t("Exam Checklist")}</strong>
               <span className="muted small">{t("Pick your exam and tick off the photo, signature and documents it asks for.")}</span>
+              <span className="hub-go">{t("Open")} <i>→</i></span>
+            </button>
+            <button className="hub-card cs-card" onClick={() => go("creative")}>
+              <span className="hub-icon">🎨</span>
+              <strong>{t("Creative Studio")}</strong>
+              <span className="muted small">{t("Wedding cards for every ceremony, welcome board, car poster, thank-you card and a WhatsApp video, all from one set of details.")}</span>
+              <span className="hub-go">{t("Open")} <i>→</i></span>
+            </button>
+            <button className="hub-card" onClick={() => go("tools")}>
+              <span className="hub-icon">🧰</span>
+              <strong>{t("Everyday tools")}</strong>
+              <span className="muted small">{t("QR code maker (link, UPI, Wi-Fi, contact) and an exam age calculator with category relaxation.")}</span>
               <span className="hub-go">{t("Open")} <i>→</i></span>
             </button>
           </div>
@@ -286,7 +303,7 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
             onCompress={() => pickPdf("compress")} onScan={() => pictures.current?.click()} />
           <div className="home-main" style={{ marginTop: 0 }}>{feedback}</div>
         </>
-      ) : tab === "photo" ? <main className="home-wide"><ImageEditor key={photoPreset?.n} preset={photoPreset?.name} /></main> : (
+      ) : tab === "creative" ? <Suspense fallback={loading}><Creative /></Suspense> : tab === "tools" ? <Suspense fallback={loading}><Tools /></Suspense> : tab === "photo" ? <main className="home-wide"><Suspense fallback={loading}><ImageEditor key={photoPreset?.n} preset={photoPreset?.name} /></Suspense></main> : (
       <main className="home-main">
         <h1>{t("Edit PDF text exactly where it is")}</h1>
         <p className="lede">{t("Change a word, a figure or a name. The original font, size, colour and position are kept, and every edit is checked against the original page.")}</p>

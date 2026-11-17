@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { jpegToDocx, jpegToPdf } from "../wrap";
 import { GROUPS, STORE, TEMPLATES, check, padJpeg, pixels, type Check, type Req } from "./requirements";
+import { t } from "../i18n";
 
 type Mask = "none" | "rounded" | "circle";
 type Corner = "nw" | "ne" | "se" | "sw";
@@ -662,33 +663,33 @@ export default function ImageEditor({ preset }: { preset?: string } = {}) {
   return (
     <div className="ie">
       <div className="ie-bar">
-        <button className="btn primary" onClick={() => fileNew.current?.click()}>＋ Upload / insert image</button>
-        <button className="btn ghost" onClick={undo} disabled={!history.current.length} title="Ctrl+Z">↶ Undo</button>
-        <button className="btn ghost" onClick={redo} disabled={!future.current.length} title="Ctrl+Y">↷ Redo</button>
+        <button className="btn primary" onClick={() => fileNew.current?.click()}>{t("＋ Upload / insert image")}</button>
+        <button className="btn ghost" onClick={undo} disabled={!history.current.length} title={t("Ctrl+Z")}>{t("↶ Undo")}</button>
+        <button className="btn ghost" onClick={redo} disabled={!future.current.length} title={t("Ctrl+Y")}>{t("↷ Redo")}</button>
         <span className="spacer" />
         <label className="ie-inline">Canvas
           <input type="number" value={art.w} min={16} max={MAX_ART} onChange={(e) => change(layers, { ...art, w: clamp(num(e.target.value, art.w), 16, MAX_ART) })} />×
           <input type="number" value={art.h} min={16} max={MAX_ART} onChange={(e) => change(layers, { ...art, h: clamp(num(e.target.value, art.h), 16, MAX_ART) })} />
         </label>
         <label className="ie-inline">Size
-          <select value={presetKey} onChange={(e) => applyPreset(e.target.value)} aria-label="Preset size">
-            <option value="" disabled>Choose a preset…</option>
+          <select value={presetKey} onChange={(e) => applyPreset(e.target.value)} aria-label={t("Preset size")}>
+            <option value="" disabled>{t("Choose a preset…")}</option>
             {PRESETS.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
           </select>
         </label>
         <label className="ie-inline">Print
-          <select value={dpi} onChange={(e) => { const v = num(e.target.value, 300); setDpi(v); if (presetKey) applyPreset(presetKey, v); }} aria-label="Print resolution">
-            <option value={150}>150 dpi</option><option value={300}>300 dpi</option><option value={600}>600 dpi</option>
+          <select value={dpi} onChange={(e) => { const v = num(e.target.value, 300); setDpi(v); if (presetKey) applyPreset(presetKey, v); }} aria-label={t("Print resolution")}>
+            <option value={150}>{t("150 dpi")}</option><option value={300}>{t("300 dpi")}</option><option value={600}>{t("600 dpi")}</option>
           </select>
         </label>
-        <select value={presetFit} onChange={(e) => setPresetFit(e.target.value as "fill" | "fit")} aria-label="How the picture fits a preset">
-          <option value="fill">Fill (crops edges)</option><option value="fit">Fit whole picture</option>
+        <select value={presetFit} onChange={(e) => setPresetFit(e.target.value as "fill" | "fit")} aria-label={t("How the picture fits a preset")}>
+          <option value="fill">Fill (crops edges)</option><option value="fit">{t("Fit whole picture")}</option>
         </select>
-        <button className="btn small" title="Swap portrait and landscape" onClick={() => { const v = !landscape; setLandscape(v); if (presetKey) applyPreset(presetKey, dpi, v); else change(layers, { ...art, w: art.h, h: art.w }); }}>⟲ Rotate size</button>
+        <button className="btn small" title={t("Swap portrait and landscape")} onClick={() => { const v = !landscape; setLandscape(v); if (presetKey) applyPreset(presetKey, dpi, v); else change(layers, { ...art, w: art.h, h: art.w }); }}>{t("⟲ Rotate size")}</button>
         {presetInfo && <span className="muted small">{presetInfo.unit === "mm" ? `${art.w}×${art.h} px at ${dpi} dpi` : "pixel size"}</span>}
         <label className="ie-inline">Background
           <select value={art.bg === "transparent" ? "transparent" : "color"} onChange={(e) => change(layers, { ...art, bg: e.target.value === "transparent" ? "transparent" : "#ffffff" })}>
-            <option value="color">Colour</option><option value="transparent">Transparent</option>
+            <option value="color">{t("Colour")}</option><option value="transparent">{t("Transparent")}</option>
           </select>
           {art.bg !== "transparent" && <input type="color" value={art.bg} onChange={(e) => setArt({ ...art, bg: e.target.value })} />}
         </label>
@@ -702,8 +703,8 @@ export default function ImageEditor({ preset }: { preset?: string } = {}) {
           {layers.length === 0 && (
             <div className="ie-empty" onClick={() => fileNew.current?.click()}>
               <div className="drop-icon">🖼</div>
-              <div>Drop pictures here or click to upload</div>
-              <div className="muted small">PNG, JPG, JPEG or WebP · everything stays in your browser</div>
+              <div>{t("Drop pictures here or click to upload")}</div>
+              <div className="muted small">{t("PNG, JPG, JPEG or WebP · everything stays in your browser")}</div>
             </div>
           )}
           <div className="ie-art" ref={wrap} style={{ aspectRatio: `${art.w} / ${art.h}`, width: `min(100%, ${Math.max(art.w, 480)}px, calc(78vh * ${art.w / art.h}))`, display: layers.length ? "block" : "none" }}
@@ -717,7 +718,7 @@ export default function ImageEditor({ preset }: { preset?: string } = {}) {
                 {!layer.locked && !cropMode && (["nw", "ne", "se", "sw"] as Corner[]).map((c) => (
                   <span key={c} className={"ie-handle c-" + c} onPointerDown={(e) => handleDown(e, "resize", c)} />
                 ))}
-                {!layer.locked && !cropMode && <span className="ie-rotate" onPointerDown={(e) => handleDown(e, "rotate")} title="Drag to rotate · Shift snaps to 15°" />}
+                {!layer.locked && !cropMode && <span className="ie-rotate" onPointerDown={(e) => handleDown(e, "rotate")} title={t("Drag to rotate · Shift snaps to 15°")} />}
               </div>
             )}
           </div>
@@ -725,10 +726,10 @@ export default function ImageEditor({ preset }: { preset?: string } = {}) {
 
         <aside className="ie-side">
           <details open className="ie-req">
-            <summary>Application requirements</summary>
-            <label className="check-row"><input type="checkbox" checked={reqOn} onChange={(e) => { setReqOn(e.target.checked); if (e.target.checked) applyReq(req); }} /> Make my picture meet these limits</label>
-            <select aria-label="Requirement" value="" onChange={(e) => { const r = [...TEMPLATES, ...saved].find((x) => x.name === e.target.value); if (r) { setReq({ ...r }); setReqOn(true); if (layers.length) applyReq(r, r.nameDate ? (art.stamp ?? newStamp()) : art.stamp); } }}>
-              <option value="" disabled>Choose exam or document…</option>
+            <summary>{t("Application requirements")}</summary>
+            <label className="check-row"><input type="checkbox" checked={reqOn} onChange={(e) => { setReqOn(e.target.checked); if (e.target.checked) applyReq(req); }} /> {t("Make my picture meet these limits")}</label>
+            <select aria-label={t("Requirement")} value="" onChange={(e) => { const r = [...TEMPLATES, ...saved].find((x) => x.name === e.target.value); if (r) { setReq({ ...r }); setReqOn(true); if (layers.length) applyReq(r, r.nameDate ? (art.stamp ?? newStamp()) : art.stamp); } }}>
+              <option value="" disabled>{t("Choose exam or document…")}</option>
               {GROUPS.map((g) => (
                 <optgroup key={g} label={g}>
                   {TEMPLATES.filter((t) => t.group === g).map((t) => <option key={t.name} value={t.name}>{t.name.slice(g.length + 2)}</option>)}
@@ -738,7 +739,7 @@ export default function ImageEditor({ preset }: { preset?: string } = {}) {
             </select>
             <p className="ie-req-name small"><b>{req.name}</b></p>
             {req.note && <p className="small">{req.note}</p>}
-            <p className="muted small">Limits can change every year: check them against your exam's official notification.</p>
+            <p className="muted small">{t("Limits can change every year: check them against your exam's official notification.")}</p>
             <div className="ie-grid">
               {reqField("Width", req.w, "w", req.unit === "mm" ? 0.5 : 1)}
               {reqField("Height", req.h, "h", req.unit === "mm" ? 0.5 : 1)}
@@ -746,41 +747,41 @@ export default function ImageEditor({ preset }: { preset?: string } = {}) {
               {reqField("Max size (KB, 0 = none)", req.maxKB, "maxKB")}
             </div>
             <div className="ie-row">
-              <select value={req.unit} onChange={(e) => updateReq({ unit: e.target.value as "px" | "mm" })} aria-label="Unit"><option value="px">pixels</option><option value="mm">millimetres</option></select>
-              {req.unit === "mm" && <select value={req.dpi} onChange={(e) => updateReq({ dpi: num(e.target.value, 300) })} aria-label="Resolution"><option value={150}>150 dpi</option><option value={200}>200 dpi</option><option value={300}>300 dpi</option><option value={600}>600 dpi</option></select>}
-              <select value={req.format} onChange={(e) => updateReq({ format: e.target.value as Req["format"] })} aria-label="Format"><option value="jpeg">JPG</option><option value="png">PNG</option><option value="webp">WebP</option></select>
+              <select value={req.unit} onChange={(e) => updateReq({ unit: e.target.value as "px" | "mm" })} aria-label={t("Unit")}><option value="px">{t("pixels")}</option><option value="mm">{t("millimetres")}</option></select>
+              {req.unit === "mm" && <select value={req.dpi} onChange={(e) => updateReq({ dpi: num(e.target.value, 300) })} aria-label={t("Resolution")}><option value={150}>{t("150 dpi")}</option><option value={200}>{t("200 dpi")}</option><option value={300}>{t("300 dpi")}</option><option value={600}>{t("600 dpi")}</option></select>}
+              <select value={req.format} onChange={(e) => updateReq({ format: e.target.value as Req["format"] })} aria-label={t("Format")}><option value="jpeg">JPG</option><option value="png">PNG</option><option value="webp">{t("WebP")}</option></select>
               <span className="muted small">= {pixels(req).join("×")} px</span>
             </div>
             <div className="ie-row">
               <button className="btn small" onClick={() => {
                 const name = prompt("Save these limits as:", req.name.replace(/ \(example\)$/, ""));
                 if (name) persist([...saved.filter((x) => x.name !== name), { ...req, name }]);
-              }}>Save these limits</button>
-              {saved.some((x) => x.name === req.name) && <button className="btn small danger" onClick={() => persist(saved.filter((x) => x.name !== req.name))}>Delete saved</button>}
+              }}>{t("Save these limits")}</button>
+              {saved.some((x) => x.name === req.name) && <button className="btn small danger" onClick={() => persist(saved.filter((x) => x.name !== req.name))}>{t("Delete saved")}</button>}
             </div>
             {reqOn && reqRes && (
               <>
                 <ul className="ps-checks">{reqRes.checks.map((c) => <li key={c.label} className={c.ok ? "ok" : "bad"}><b>{c.ok ? "✓" : "✗"}</b> {c.label}: <span>{c.detail}</span></li>)}</ul>
-                {reqRes.padded && <p className="muted small">Smaller than the minimum, so empty metadata was added to reach it. The picture itself is unchanged.</p>}
+                {reqRes.padded && <p className="muted small">{t("Smaller than the minimum, so empty metadata was added to reach it. The picture itself is unchanged.")}</p>}
                 {!reqRes.reached && <p className="muted small" style={{ color: "#d33" }}>Cannot get under {req.maxKB} KB at {pixels(req).join("×")} px. Check the limits or the format.</p>}
               </>
             )}
           </details>
           <details open={!!art.stamp} className="ie-stamp">
-            <summary>Name and date on photo</summary>
-            <label className="check-row"><input type="checkbox" checked={!!art.stamp} onChange={(e) => toggleStamp(e.target.checked)} /> Print name and date below the face</label>
+            <summary>{t("Name and date on photo")}</summary>
+            <label className="check-row"><input type="checkbox" checked={!!art.stamp} onChange={(e) => toggleStamp(e.target.checked)} /> {t("Print name and date below the face")}</label>
             {art.stamp && (
               <div className="form-grid">
-                <label>Name<input value={art.stamp.name} placeholder="Your name" onChange={(e) => editStamp({ name: e.target.value.toUpperCase() })} /></label>
-                <label>Date of photo<input value={art.stamp.date} placeholder="DD/MM/YYYY" onChange={(e) => editStamp({ date: e.target.value })} /></label>
-                <label className="ie-slider"><span>Band height</span>
+                <label>{t("Name")}<input value={art.stamp.name} placeholder={t("Your name")} onChange={(e) => editStamp({ name: e.target.value.toUpperCase() })} /></label>
+                <label>{t("Date of photo")}<input value={art.stamp.date} placeholder={t("DD/MM/YYYY")} onChange={(e) => editStamp({ date: e.target.value })} /></label>
+                <label className="ie-slider"><span>{t("Band height")}</span>
                   <input type="range" min={10} max={30} value={art.stamp.size} onChange={(e) => editStamp({ size: num(e.target.value, 18) })} /><output>{art.stamp.size}%</output></label>
-                <span className="muted small">Use the date the photo was actually taken.</span>
+                <span className="muted small">{t("Use the date the photo was actually taken.")}</span>
               </div>
             )}
           </details>
-          <h3>Layers</h3>
-          {layers.length === 0 && <p className="muted small">No pictures yet.</p>}
+          <h3>{t("Layers")}</h3>
+          {layers.length === 0 && <p className="muted small">{t("No pictures yet.")}</p>}
           <ul className="ie-layers">
             {[...layers].reverse().map((l) => (
               <li key={l.id} className={l.id === sel ? "active" : ""}>
@@ -792,8 +793,8 @@ export default function ImageEditor({ preset }: { preset?: string } = {}) {
 
           {layers.length > 2 && (
             <div className="ie-row">
-              <button className="btn small" onClick={() => distribute("x")}>Distribute ↔</button>
-              <button className="btn small" onClick={() => distribute("y")}>Distribute ↕</button>
+              <button className="btn small" onClick={() => distribute("x")}>{t("Distribute ↔")}</button>
+              <button className="btn small" onClick={() => distribute("y")}>{t("Distribute ↕")}</button>
             </div>
           )}
 
@@ -807,15 +808,15 @@ export default function ImageEditor({ preset }: { preset?: string } = {}) {
                   {field("Width", layer.w, (v) => setSize(v, lock ? v / ratio : layer.h))}
                   {field("Height", layer.h, (v) => setSize(lock ? v * ratio : layer.w, v))}
                 </div>
-                <label className="check-row"><input type="checkbox" checked={lock} onChange={(e) => setLock(e.target.checked)} /> Keep aspect ratio</label>
+                <label className="check-row"><input type="checkbox" checked={lock} onChange={(e) => setLock(e.target.checked)} /> {t("Keep aspect ratio")}</label>
                 <div className="ie-row">
                   <button className="btn small" onClick={() => setSize(layer.w * 0.5, layer.h * 0.5)}>50%</button>
                   <button className="btn small" onClick={() => setSize(layer.w * 2, layer.h * 2)}>200%</button>
-                  <button className="btn small" onClick={() => setSize(layer.src.width, layer.src.height)}>Original size</button>
-                  <button className="btn small" onClick={() => { const k = Math.min(art.w / layer.w, art.h / layer.h); patch(layer.id, { w: layer.w * k, h: layer.h * k, cx: art.w / 2, cy: art.h / 2 }); }}>Fit canvas</button>
+                  <button className="btn small" onClick={() => setSize(layer.src.width, layer.src.height)}>{t("Original size")}</button>
+                  <button className="btn small" onClick={() => { const k = Math.min(art.w / layer.w, art.h / layer.h); patch(layer.id, { w: layer.w * k, h: layer.h * k, cx: art.w / 2, cy: art.h / 2 }); }}>{t("Fit canvas")}</button>
                 </div>
                 <div className="ie-row">
-                  <button className="btn small" onClick={() => change(layers, { ...art, w: Math.round(layer.w), h: Math.round(layer.h) }) } title="Make the canvas exactly this picture's size">Canvas ← picture</button>
+                  <button className="btn small" onClick={() => change(layers, { ...art, w: Math.round(layer.w), h: Math.round(layer.h) }) } title={t("Make the canvas exactly this picture's size")}>{t("Canvas ← picture")}</button>
                 </div>
               </details>
 
@@ -825,8 +826,8 @@ export default function ImageEditor({ preset }: { preset?: string } = {}) {
                   <button className="btn small" onClick={() => patch(layer.id, { rot: (layer.rot + 270) % 360 })}>↺ 90°</button>
                   <button className="btn small" onClick={() => patch(layer.id, { rot: (layer.rot + 90) % 360 })}>↻ 90°</button>
                   <button className="btn small" onClick={() => patch(layer.id, { rot: (layer.rot + 180) % 360 })}>180°</button>
-                  <button className="btn small" onClick={() => patch(layer.id, { flipH: !layer.flipH })}>⇆ Flip H</button>
-                  <button className="btn small" onClick={() => patch(layer.id, { flipV: !layer.flipV })}>⇅ Flip V</button>
+                  <button className="btn small" onClick={() => patch(layer.id, { flipH: !layer.flipH })}>{t("⇆ Flip H")}</button>
+                  <button className="btn small" onClick={() => patch(layer.id, { flipV: !layer.flipV })}>{t("⇅ Flip V")}</button>
                 </div>
                 {slider("Angle", "rot", 0, 359, "°")}
               </details>
@@ -836,7 +837,7 @@ export default function ImageEditor({ preset }: { preset?: string } = {}) {
                 <div className="ie-row">
                   <button className={"btn small" + (cropMode ? " primary" : "")} onClick={() => setCropMode(!cropMode)}>{cropMode ? "✓ Done cropping" : "✂ Crop with mouse"}</button>
                 </div>
-                {cropMode && <p className="muted small">Drag the square handles on the edges and corners to cut the picture.</p>}
+                {cropMode && <p className="muted small">{t("Drag the square handles on the edges and corners to cut the picture.")}</p>}
                 <div className="ie-grid">
                   {field("Left %", layer.crop[0], (v) => crop(0, v))}
                   {field("Top %", layer.crop[1], (v) => crop(1, v))}
@@ -844,107 +845,107 @@ export default function ImageEditor({ preset }: { preset?: string } = {}) {
                   {field("Bottom %", layer.crop[3], (v) => crop(3, v))}
                 </div>
                 <div className="ie-row">
-                  <button className="btn small" onClick={() => patch(layer.id, { crop: [0, 0, 0, 0], h: layer.h })}>Reset crop</button>
-                  <select value={layer.mask} onChange={(e) => patch(layer.id, { mask: e.target.value as Mask })} aria-label="Mask shape">
-                    <option value="none">No mask</option><option value="rounded">Rounded corners</option><option value="circle">Circle / oval</option>
+                  <button className="btn small" onClick={() => patch(layer.id, { crop: [0, 0, 0, 0], h: layer.h })}>{t("Reset crop")}</button>
+                  <select value={layer.mask} onChange={(e) => patch(layer.id, { mask: e.target.value as Mask })} aria-label={t("Mask shape")}>
+                    <option value="none">{t("No mask")}</option><option value="rounded">{t("Rounded corners")}</option><option value="circle">{t("Circle / oval")}</option>
                   </select>
                 </div>
               </details>
 
               <details>
-                <summary>Adjust</summary>
+                <summary>{t("Adjust")}</summary>
                 {slider("Brightness", "brightness", 0, 200)}
                 {slider("Contrast", "contrast", 0, 200)}
                 {slider("Saturation", "saturation", 0, 300)}
                 {slider("Opacity", "opacity", 0, 100)}
                 {slider("Blur", "blur", 0, 20, "px")}
                 <div className="ie-row">
-                  <label className="check-row"><input type="checkbox" checked={layer.gray} onChange={(e) => patch(layer.id, { gray: e.target.checked })} /> Grayscale</label>
+                  <label className="check-row"><input type="checkbox" checked={layer.gray} onChange={(e) => patch(layer.id, { gray: e.target.checked })} /> {t("Grayscale")}</label>
                   <label className="check-row"><input type="checkbox" checked={layer.bw} onChange={(e) => patch(layer.id, { bw: e.target.checked })} /> Black &amp; white</label>
                 </div>
-                <label className="ie-slider"><span>Sharpen</span>
+                <label className="ie-slider"><span>{t("Sharpen")}</span>
                   <input type="range" min={0.1} max={1.5} step={0.1} value={sharp} onChange={(e) => setSharp(num(e.target.value))} />
-                  <button className="btn small" onClick={() => patch(layer.id, { src: sharpen(layer.src, sharp) })}>Apply</button>
+                  <button className="btn small" onClick={() => patch(layer.id, { src: sharpen(layer.src, sharp) })}>{t("Apply")}</button>
                 </label>
-                <label className="ie-slider"><span>Remove background</span>
+                <label className="ie-slider"><span>{t("Remove background")}</span>
                   <input type="range" min={5} max={60} value={tol} onChange={(e) => setTol(num(e.target.value))} />
-                  <button className="btn small" onClick={() => patch(layer.id, { src: removeBackground(layer.src, tol) })}>Apply</button>
+                  <button className="btn small" onClick={() => patch(layer.id, { src: removeBackground(layer.src, tol) })}>{t("Apply")}</button>
                 </label>
-                <p className="muted small">Background removal makes every colour close to the picture's corner colour transparent. It works best on plain backgrounds.</p>
+                <p className="muted small">{t("Background removal makes every colour close to the picture's corner colour transparent. It works best on plain backgrounds.")}</p>
               </details>
 
               <details>
                 <summary>Border &amp; shadow</summary>
                 {slider("Border", "border", 0, 60, "px")}
-                <label className="ie-inline">Border colour <input type="color" value={layer.borderColor} onChange={(e) => patch(layer.id, { borderColor: e.target.value })} /></label>
+                <label className="ie-inline">{t("Border colour")} <input type="color" value={layer.borderColor} onChange={(e) => patch(layer.id, { borderColor: e.target.value })} /></label>
                 {slider("Shadow", "shadow", 0, 60, "px")}
               </details>
 
               <details open>
-                <summary>Arrange</summary>
+                <summary>{t("Arrange")}</summary>
                 <div className="ie-row">
-                  <button className="btn small" onClick={() => align("left")}>⇤ Left</button>
-                  <button className="btn small" onClick={() => align("hcenter")}>↔ Centre</button>
-                  <button className="btn small" onClick={() => align("right")}>⇥ Right</button>
+                  <button className="btn small" onClick={() => align("left")}>{t("⇤ Left")}</button>
+                  <button className="btn small" onClick={() => align("hcenter")}>{t("↔ Centre")}</button>
+                  <button className="btn small" onClick={() => align("right")}>{t("⇥ Right")}</button>
                 </div>
                 <div className="ie-row">
-                  <button className="btn small" onClick={() => align("top")}>⤒ Top</button>
-                  <button className="btn small" onClick={() => align("vmiddle")}>↕ Middle</button>
-                  <button className="btn small" onClick={() => align("bottom")}>⤓ Bottom</button>
+                  <button className="btn small" onClick={() => align("top")}>{t("⤒ Top")}</button>
+                  <button className="btn small" onClick={() => align("vmiddle")}>{t("↕ Middle")}</button>
+                  <button className="btn small" onClick={() => align("bottom")}>{t("⤓ Bottom")}</button>
                 </div>
                 <div className="ie-row">
-                  <button className="btn small" onClick={() => reorder(layer.id, "front")}>To front</button>
-                  <button className="btn small" onClick={() => reorder(layer.id, "forward")}>Forward</button>
-                  <button className="btn small" onClick={() => reorder(layer.id, "backward")}>Backward</button>
-                  <button className="btn small" onClick={() => reorder(layer.id, "back")}>To back</button>
+                  <button className="btn small" onClick={() => reorder(layer.id, "front")}>{t("To front")}</button>
+                  <button className="btn small" onClick={() => reorder(layer.id, "forward")}>{t("Forward")}</button>
+                  <button className="btn small" onClick={() => reorder(layer.id, "backward")}>{t("Backward")}</button>
+                  <button className="btn small" onClick={() => reorder(layer.id, "back")}>{t("To back")}</button>
                 </div>
               </details>
 
               <div className="ie-row">
-                <button className="btn small" onClick={() => fileReplace.current?.click()}>Replace…</button>
-                <button className="btn small" onClick={() => duplicate(layer)} title="Ctrl+D (or Ctrl+C then Ctrl+V)">Duplicate</button>
-                <button className="btn small danger" onClick={() => remove(layer.id)} disabled={layer.locked}>Delete</button>
+                <button className="btn small" onClick={() => fileReplace.current?.click()}>{t("Replace…")}</button>
+                <button className="btn small" onClick={() => duplicate(layer)} title={t("Ctrl+D (or Ctrl+C then Ctrl+V)")}>{t("Duplicate")}</button>
+                <button className="btn small danger" onClick={() => remove(layer.id)} disabled={layer.locked}>{t("Delete")}</button>
               </div>
             </>
           )}
 
           <details open className="ie-export">
-            <summary>Download / convert</summary>
+            <summary>{t("Download / convert")}</summary>
             <div className="ie-row">
-              <select value={format} onChange={(e) => setFormat(e.target.value as Format)} aria-label="Format">
-                <option value="png">PNG</option><option value="jpeg">JPG</option><option value="webp">WebP</option>
-                <option value="pdf">PDF</option><option value="docx">Word</option>
+              <select value={format} onChange={(e) => setFormat(e.target.value as Format)} aria-label={t("Format")}>
+                <option value="png">PNG</option><option value="jpeg">JPG</option><option value="webp">{t("WebP")}</option>
+                <option value="pdf">PDF</option><option value="docx">{t("Word")}</option>
               </select>
               <span className="muted small">{Math.round(art.w * outScale / 100)}×{Math.round(art.h * outScale / 100)} px</span>
             </div>
             <div className="ie-row">
-              <label className="check-row"><input type="radio" checked={sizeMode === "quality"} onChange={() => setSizeMode("quality")} /> Choose quality</label>
-              <label className="check-row"><input type="radio" checked={sizeMode === "target"} onChange={() => setSizeMode("target")} /> Set file size</label>
+              <label className="check-row"><input type="radio" checked={sizeMode === "quality"} onChange={() => setSizeMode("quality")} /> {t("Choose quality")}</label>
+              <label className="check-row"><input type="radio" checked={sizeMode === "target"} onChange={() => setSizeMode("target")} /> {t("Set file size")}</label>
             </div>
             {sizeMode === "quality" && format !== "png" && (
-              <label className="ie-slider"><span>Quality</span>
+              <label className="ie-slider"><span>{t("Quality")}</span>
                 <input type="range" min={10} max={100} value={quality} onChange={(e) => setQuality(num(e.target.value))} /><output>{quality}%</output></label>
             )}
-            {sizeMode === "quality" && format === "png" && <p className="muted small">PNG is lossless, so its size depends on the resolution. Use JPG or WebP for smaller files, or set a file size.</p>}
+            {sizeMode === "quality" && format === "png" && <p className="muted small">{t("PNG is lossless, so its size depends on the resolution. Use JPG or WebP for smaller files, or set a file size.")}</p>}
             {sizeMode === "target" && (
               <>
                 <div className="ie-row">
-                  <span className="small">Make it at most</span>
+                  <span className="small">{t("Make it at most")}</span>
                   <input type="number" min={1} value={targetVal} style={{ width: 80 }} onChange={(e) => setTargetVal(Math.max(1, num(e.target.value, targetVal)))} />
-                  <select value={targetUnit} onChange={(e) => setTargetUnit(e.target.value as "KB" | "MB")} aria-label="Unit"><option>KB</option><option>MB</option></select>
+                  <select value={targetUnit} onChange={(e) => setTargetUnit(e.target.value as "KB" | "MB")} aria-label={t("Unit")}><option>KB</option><option>MB</option></select>
                 </div>
-                <label className="ie-slider"><span>File size</span>
+                <label className="ie-slider"><span>{t("File size")}</span>
                   <input type="range" min={0} max={100} value={Math.round(clamp((Math.log(Math.max(targetKB, 5) / 5) / Math.log(1000)) * 100, 0, 100))}
                     onChange={(e) => setTargetKB(5 * Math.pow(1000, num(e.target.value) / 100))} /><output>{targetVal} {targetUnit}</output></label>
                 <div className="ie-row">{[20, 50, 100, 200, 500].map((k) => <button key={k} className="btn small" onClick={() => { setTargetVal(k); setTargetUnit("KB"); }}>{k} KB</button>)}</div>
                 <p className="muted small">The best quality that fits is used; if even the lowest quality is too big, the picture is made smaller.</p>
               </>
             )}
-            <label className="ie-slider"><span>Resolution</span>
+            <label className="ie-slider"><span>{t("Resolution")}</span>
               <input type="range" min={10} max={200} value={outScale} onChange={(e) => setOutScale(num(e.target.value))} /><output>{outScale}%</output></label>
             <div className="ie-row">
               <button className="btn primary" onClick={() => exportImage(true)} disabled={!layers.length || working}>{working ? "Working…" : "⬇ Download " + (format === "pdf" ? "PDF" : format === "docx" ? "Word file" : "image")}</button>
-              <button className="btn small" onClick={() => exportImage(false)} disabled={!layers.length || working}>Check size</button>
+              <button className="btn small" onClick={() => exportImage(false)} disabled={!layers.length || working}>{t("Check size")}</button>
             </div>
             {exported && <p className="muted small">{exported}</p>}
           </details>

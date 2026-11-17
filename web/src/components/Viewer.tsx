@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { PDFDocumentProxy, PageViewport } from "pdfjs-dist";
 import type { PageModel, Selection } from "../types";
 import { glyphsFor, toViewRect, unionBox, wordsOf, type Word } from "../pdf";
+import { t } from "../i18n";
 
 interface Props {
   pdf: PDFDocumentProxy;
@@ -133,8 +134,8 @@ export default function Viewer({ pdf, pageNum, zoom, model, selection, highlight
             return (
               <div className="touch-bar" style={{ left: Math.max(4, selRect.left), top: selRect.top + selRect.height + 6 }}
                 onClick={(e) => e.stopPropagation()}>
-                <button className="btn small primary" onClick={onEdit}>✎ Edit</button>
-                {next && <button className="btn small" onClick={() => onSelect({ ...selection, end: next.end })}>＋ Next word</button>}
+                <button className="btn small primary" onClick={onEdit}>{t("✎ Edit")}</button>
+                {next && <button className="btn small" onClick={() => onSelect({ ...selection, end: next.end })}>{t("＋ Next word")}</button>}
               </div>
             );
           })()}
@@ -149,7 +150,7 @@ export default function Viewer({ pdf, pageNum, zoom, model, selection, highlight
           )}
         </div>
       )}
-      {rendering && <div className="page-loading">Rendering…</div>}
+      {rendering && <div className="page-loading">{t("Rendering…")}</div>}
     </div>
   );
 }

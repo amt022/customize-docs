@@ -40,6 +40,14 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   return body.data as T;
 }
 
+/** Creative Studio details kept on the server for this browser / account (photos stay in the browser). */
+export const creativeApi = {
+  get: () => call<{ data: Record<string, unknown>; updatedAt: string } | null>("/creative"),
+  put: (data: Record<string, unknown>) => call<{ updatedAt: string }>("/creative", {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ data }),
+  }),
+};
+
 const json = (data: unknown): RequestInit => ({
   method: "POST",
   headers: { "Content-Type": "application/json" },

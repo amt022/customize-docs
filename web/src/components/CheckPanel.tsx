@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, type CheckIssue, type CheckResult, type IssueCategory } from "../api";
+import { t } from "../i18n";
 
 const CATEGORY: Record<IssueCategory, string> = {
   editing: "Editing",
@@ -40,12 +41,12 @@ export default function CheckPanel({ docId, version, onShow, onClose }: {
   return (
     <aside className="props check">
       <header className="chat-head">
-        <h3>✓ Document check</h3>
+        <h3>{t("✓ Document check")}</h3>
         <span className="spacer" />
-        <button className="btn ghost small" onClick={onClose} aria-label="Close check">✕</button>
+        <button className="btn ghost small" onClick={onClose} aria-label={t("Close check")}>✕</button>
       </header>
       <div className="check-body">
-        {!result && !error && <p className="muted">Checking text, layout, scans, file structure and edits…</p>}
+        {!result && !error && <p className="muted">{t("Checking text, layout, scans, file structure and edits…")}</p>}
         {error && <p className="error-text">{error}</p>}
         {result && (
           <>

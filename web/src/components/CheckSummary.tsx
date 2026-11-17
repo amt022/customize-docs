@@ -1,4 +1,5 @@
 import type { EditResponse } from "../types";
+import { t } from "../i18n";
 
 interface Props {
   preview: EditResponse | null;
@@ -27,8 +28,8 @@ export default function CheckSummary({ preview, error, checking, compact }: Prop
             {r.strategy === "mixed" ? `${subs} → ${subFonts}` : `Font: ${subFonts}`}
           </span>
         )}
-        {r.recentered ? <span className="chip info">Line stays centred</span> : r.anchor !== "left" && <span className="chip info">Keeps {r.anchor} edge</span>}
-        {r.fits ? <span className="chip good">Fits</span> : <span className="chip bad">Overflows {r.overflow}pt</span>}
+        {r.recentered ? <span className="chip info">{t("Line stays centred")}</span> : r.anchor !== "left" && <span className="chip info">Keeps {r.anchor} edge</span>}
+        {r.fits ? <span className="chip good">{t("Fits")}</span> : <span className="chip bad">Overflows {r.overflow}pt</span>}
         {r.fitApplied === "reflow" && !r.recentered && r.shift !== undefined && Math.abs(r.shift) > 0.05 && (
           <span className="chip info">Rest of line shifts {r.shift > 0 ? "+" : ""}{r.shift}pt</span>
         )}

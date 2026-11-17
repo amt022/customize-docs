@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type SessionInfo } from "../api";
 import Dialog from "./Dialog";
+import { t } from "../i18n";
 
 /** Header button: "Sign in" (email or mobile number + OTP) or the signed-in number with sign-out / delete account. */
 export default function Account({ session, onChange, openSignIn = false, onSignInShown }: {
@@ -33,7 +34,7 @@ export default function Account({ session, onChange, openSignIn = false, onSignI
   if (!session.user) {
     return (
       <>
-        <button className="btn account-btn" onClick={() => setOpen(true)}>Sign in</button>
+        <button className="btn account-btn" onClick={() => setOpen(true)}>{t("Sign in")}</button>
         {open && <SignIn methods={session.signIn?.length ? session.signIn : ["phone"]} onClose={() => setOpen(false)} onDone={(s) => { setOpen(false); onChange(s); }} />}
       </>
     );
@@ -43,25 +44,25 @@ export default function Account({ session, onChange, openSignIn = false, onSignI
       <button className="btn account-btn" aria-expanded={menu} onClick={() => setMenu(!menu)}>{session.user.kind === "email" ? "✉️" : "📱"} {session.user.login}</button>
       {menu && (
         <div className="account-menu" role="menu">
-          <button role="menuitem" onClick={async () => { setMenu(false); onChange(await api.logout()); }}>Sign out</button>
-          <button role="menuitem" className="danger" onClick={() => { setMenu(false); setConfirmDelete(true); }}>Delete account…</button>
+          <button role="menuitem" onClick={async () => { setMenu(false); onChange(await api.logout()); }}>{t("Sign out")}</button>
+          <button role="menuitem" className="danger" onClick={() => { setMenu(false); setConfirmDelete(true); }}>{t("Delete account…")}</button>
         </div>
       )}
       {confirmDelete && (
         <Dialog
-          title="Delete account"
+          title={t("Delete account")}
           onClose={() => setConfirmDelete(false)}
           footer={<>
-            <button className="btn" onClick={() => setConfirmDelete(false)}>Cancel</button>
+            <button className="btn" onClick={() => setConfirmDelete(false)}>{t("Cancel")}</button>
             <button className="btn danger" onClick={async () => {
               try {
                 onChange(await api.deleteAccount());
                 setConfirmDelete(false);
               } catch (e) { setError((e as Error).message); }
-            }}>Delete everything</button>
+            }}>{t("Delete everything")}</button>
           </>}
         >
-          <p>This permanently deletes your account and every document in it from our servers. It cannot be undone.</p>
+          <p>{t("This permanently deletes your account and every document in it from our servers. It cannot be undone.")}</p>
           {error && <div className="error-banner">{error}</div>}
         </Dialog>
       )}
@@ -99,7 +100,7 @@ function SignIn({ methods, onClose, onDone }: { methods: ("email" | "phone")[]; 
   const verify = () => run(async () => onDone(await api.verifyCode(phone, code)));
 
   return (
-    <Dialog title="Sign in or sign up" onClose={onClose} width={400}>
+    <Dialog title={t("Sign in or sign up")} onClose={onClose} width={400}>
       {sentTo === null ? (
         <form className="signin" onSubmit={(e) => { e.preventDefault(); send(); }}>
           {methods.length > 1 && (
@@ -113,7 +114,7 @@ function SignIn({ methods, onClose, onDone }: { methods: ("email" | "phone")[]; 
           <p className="muted small">New here? Just enter your {method === "email" ? "email address" : "number"} and your account is created automatically. Signed in, your documents are kept and open on any device. We {method === "email" ? "email" : "text"} you a one-time code; no password needed.</p>
           {method === "email" ? (
             <label key="email">Email address
-              <input type="email" inputMode="email" autoComplete="email" placeholder="you@gmail.com" value={phone}
+              <input type="email" inputMode="email" autoComplete="email" placeholder={t("you@gmail.com")} value={phone}
                 onChange={(e) => setPhone(e.target.value)} autoFocus required />
             </label>
           ) : (
@@ -124,13 +125,13 @@ function SignIn({ methods, onClose, onDone }: { methods: ("email" | "phone")[]; 
           )}
           <label className="consent small">
             <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} required />
-            <span>I agree to the <a href="#privacy" target="_blank" rel="noopener">Privacy Policy</a> and <a href="#terms" target="_blank" rel="noopener">Terms of Use</a>. I am 18 or older, or my parent / guardian agrees.</span>
+            <span>{t("I agree to the")} <a href="#privacy" target="_blank" rel="noopener">{t("Privacy Policy")}</a> {t("and")} <a href="#terms" target="_blank" rel="noopener">{t("Terms of Use")}</a>{t(". I am 18 or older, or my parent / guardian agrees.")}</span>
           </label>
           <button className="btn primary" type="submit" disabled={busy || !phone.trim() || !agree}>{busy ? "Sending…" : "Send code"}</button>
         </form>
       ) : (
         <form className="signin" onSubmit={(e) => { e.preventDefault(); verify(); }}>
-          <p className="muted small">Enter the 6-digit code sent to <b>{sentTo}</b>.{method === "email" && " Not there after a minute? Check your Spam or Promotions folder."}</p>
+          <p className="muted small">{t("Enter the 6-digit code sent to")} <b>{sentTo}</b>.{method === "email" && " Not there after a minute? Check your Spam or Promotions folder."}</p>
           <label>Code
             <input inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]*" maxLength={7} value={code}
               onChange={(e) => setCode(e.target.value)} autoFocus required className="otp" />

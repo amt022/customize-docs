@@ -1,6 +1,6 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, Suspense, lazy, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import Editor, { type StartAction } from "./components/Editor";
+import type { StartAction } from "./components/Editor";
 import Home from "./components/Home";
 import LegalPage from "./components/Legal";
 import "./styles.css";
@@ -10,6 +10,9 @@ import "./dark.css";
 import { initTheme } from "./theme";
 
 initTheme();
+
+// the PDF editor (and pdf.js) loads only when a document is opened
+const Editor = lazy(() => import("./components/Editor"));
 
 function App() {
   const read = () => new URLSearchParams(location.hash.slice(1)).get("doc");
@@ -32,7 +35,9 @@ function App() {
     setTool(startTool);
   };
   if (page) return <LegalPage kind={page} onBack={() => { location.hash = ""; setPage(null); }} />;
-  return doc ? <Editor key={doc} id={doc} startTool={tool} startAction={action} onClose={() => open(null)} /> : <Home onOpen={open} />;
+  return doc
+    ? <Suspense fallback={<p className="muted" role="status" style={{ padding: 24 }}>Loading…</p>}><Editor key={doc} id={doc} startTool={tool} startAction={action} onClose={() => open(null)} /></Suspense>
+    : <Home onOpen={open} />;
 }
 
 createRoot(document.getElementById("root")!).render(

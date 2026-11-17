@@ -11,8 +11,8 @@ function concat(parts: (Uint8Array | string)[]): Uint8Array {
 }
 
 /** One page exactly the picture's size (96 px per inch), the JPEG stored as-is (DCTDecode). */
-export function jpegToPdf(jpeg: Uint8Array, width: number, height: number): Blob {
-  const w = +(width * 0.75).toFixed(2), h = +(height * 0.75).toFixed(2);
+export function jpegToPdf(jpeg: Uint8Array, width: number, height: number, pagePt?: [number, number]): Blob {
+  const w = +(pagePt ? pagePt[0] : width * 0.75).toFixed(2), h = +(pagePt ? pagePt[1] : height * 0.75).toFixed(2);
   const content = `q ${w} 0 0 ${h} 0 0 cm /Im0 Do Q`;
   const objs: (Uint8Array | string)[][] = [
     ["<< /Type /Catalog /Pages 2 0 R >>"],

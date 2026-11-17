@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import Dialog from "./Dialog";
 import { api, formatBytes, type CompressionLevel, type CompressionStats, type ConvertFormat, type ExportOptions } from "../api";
+import { t } from "../i18n";
 
 const LEVELS: { id: CompressionLevel; label: string; hint: string }[] = [
   { id: "none", label: "No compression", hint: "The file exactly as stored" },
@@ -51,9 +52,9 @@ export function ExportDialog({ docId, pageCount, isScan, wasEncrypted, isSigned,
     const isImage = format === "jpg" || format === "png";
     const badPages = !allPages && !/^\s*\d+\s*(-\s*\d*\s*)?(,\s*\d+\s*(-\s*\d*\s*)?)*$/.test(pages);
     return (
-      <Dialog title="Download" onClose={onClose} footer={<>
+      <Dialog title={t("Download")} onClose={onClose} footer={<>
         <span className="spacer" />
-        <button className="btn" onClick={onClose}>Cancel</button>
+        <button className="btn" onClick={onClose}>{t("Cancel")}</button>
         <button className="btn primary" disabled={badPages} onClick={() => onConvert(format, allPages ? "" : pages, dpi)}>
           Download {FORMATS.find((f) => f.id === format)!.label}
         </button>
@@ -61,11 +62,11 @@ export function ExportDialog({ docId, pageCount, isScan, wasEncrypted, isSigned,
         <FormatPicker format={format} setFormat={setFormat} />
         {pageCount > 1 && (
           <fieldset className="form-grid">
-            <legend>Pages</legend>
+            <legend>{t("Pages")}</legend>
             <label className="check-row"><input type="radio" checked={allPages} onChange={() => setAllPages(true)} /> All {pageCount} pages</label>
             <label className="check-row"><input type="radio" checked={!allPages} onChange={() => setAllPages(false)} /> Only pages
               <input value={pages} onChange={(e) => setPages(e.target.value)} onFocus={() => setAllPages(false)} placeholder="e.g. 1-3, 5" style={{ width: "8em" }} /></label>
-            {badPages && <span className="bad-text small">Write pages like 1-3, 5</span>}
+            {badPages && <span className="bad-text small">{t("Write pages like 1-3, 5")}</span>}
           </fieldset>
         )}
         {isImage && (
@@ -88,7 +89,7 @@ export function ExportDialog({ docId, pageCount, isScan, wasEncrypted, isSigned,
 function FormatPicker({ format, setFormat }: { format: DownloadFormat; setFormat: (f: DownloadFormat) => void }) {
   return (
     <fieldset className="format-options">
-      <legend>Format</legend>
+      <legend>{t("Format")}</legend>
       <div className="format-row" role="radiogroup">
         {FORMATS.map((f) => (
           <button key={f.id} type="button" role="radio" aria-checked={format === f.id}
@@ -131,9 +132,9 @@ function PdfExportDialog({ docId, wasEncrypted, isSigned, startTarget, onExport,
   const mismatch = protect && pw !== pw2;
   const missing = protect && !pw && !owner;
   return (
-    <Dialog title="Download" onClose={onClose} footer={<>
+    <Dialog title={t("Download")} onClose={onClose} footer={<>
       <span className="spacer" />
-      <button className="btn" onClick={onClose}>Cancel</button>
+      <button className="btn" onClick={onClose}>{t("Cancel")}</button>
       <button className="btn primary" disabled={mismatch || missing || badTarget}
         onClick={() => {
           const level: CompressionLevel = compression === "target" ? "none" : compression;
@@ -148,27 +149,27 @@ function PdfExportDialog({ docId, wasEncrypted, isSigned, startTarget, onExport,
     </>}>
       {picker}
       <fieldset className="compress-options">
-        <legend>Compression</legend>
+        <legend>{t("Compression")}</legend>
         <label className={"compress-option target-option" + (compression === "target" ? " selected" : "")}>
           <input type="radio" name="compression" checked={compression === "target"} onChange={() => setCompression("target")} />
           <span className="compress-text">
-            <strong>Under a size limit <span className="new-tag">For upload portals</span></strong>
-            <span className="muted small">Use the limit from the application form. We keep as much quality as fits.</span>
+            <strong>{t("Under a size limit")} <span className="new-tag">{t("For upload portals")}</span></strong>
+            <span className="muted small">{t("Use the limit from the application form. We keep as much quality as fits.")}</span>
             {compression === "target" && (
               <span className="target-row">
                 {TARGETS.map((kb) => (
                   <button type="button" key={kb} className={"size-chip" + (targetKb === kb ? " on" : "")} onClick={() => setTargetKb(kb)}>{kbLabel(kb)}</button>
                 ))}
                 <span className="target-custom">
-                  <input type="number" min={10} max={100000} value={targetKb || ""} aria-label="Size limit in KB"
+                  <input type="number" min={10} max={100000} value={targetKb || ""} aria-label={t("Size limit in KB")}
                     onChange={(e) => setTargetKb(Math.round(Number(e.target.value)))} /> KB
                 </span>
               </span>
             )}
-            {badTarget && <span className="bad-text small">Enter a limit of at least 10 KB.</span>}
+            {badTarget && <span className="bad-text small">{t("Enter a limit of at least 10 KB.")}</span>}
           </span>
           <span className="compress-size">{sizes && compression === "target" && sizes.none.size <= targetKb * 1024
-            ? <span className="good-text small">Already fits</span> : null}</span>
+            ? <span className="good-text small">{t("Already fits")}</span> : null}</span>
         </label>
         {LEVELS.map((l) => {
           const st = sizes?.[l.id];
@@ -188,19 +189,19 @@ function PdfExportDialog({ docId, wasEncrypted, isSigned, startTarget, onExport,
             </label>
           );
         })}
-        {isSigned && compression !== "none" && <span className="warn-text small">Compressing rewrites the file and invalidates its digital signature.</span>}
+        {isSigned && compression !== "none" && <span className="warn-text small">{t("Compressing rewrites the file and invalidates its digital signature.")}</span>}
       </fieldset>
       {wasEncrypted && <p className="warn-text small">The uploaded file was password protected. It is stored unlocked here; set a password to protect the copy you download.</p>}
       <label className="check-row"><input type="checkbox" checked={protect} onChange={(e) => setProtect(e.target.checked)} /> Protect with a password (AES-256)</label>
       {protect && (
         <div className="form-grid">
-          <label>Password to open<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus /></label>
-          <label>Repeat password<input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></label>
-          {mismatch && <span className="bad-text small">Passwords do not match</span>}
-          <label>Permissions password <span className="muted small">(optional, to change restrictions)</span><input type="password" value={owner} onChange={(e) => setOwner(e.target.value)} /></label>
-          <label className="check-row"><input type="checkbox" checked={allowPrint} onChange={(e) => setAllowPrint(e.target.checked)} /> Allow printing</label>
-          <label className="check-row"><input type="checkbox" checked={allowCopy} onChange={(e) => setAllowCopy(e.target.checked)} /> Allow copying text</label>
-          <label className="check-row"><input type="checkbox" checked={allowModify} onChange={(e) => setAllowModify(e.target.checked)} /> Allow editing and comments</label>
+          <label>{t("Password to open")}<input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus /></label>
+          <label>{t("Repeat password")}<input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} /></label>
+          {mismatch && <span className="bad-text small">{t("Passwords do not match")}</span>}
+          <label>{t("Permissions password")} <span className="muted small">(optional, to change restrictions)</span><input type="password" value={owner} onChange={(e) => setOwner(e.target.value)} /></label>
+          <label className="check-row"><input type="checkbox" checked={allowPrint} onChange={(e) => setAllowPrint(e.target.checked)} /> {t("Allow printing")}</label>
+          <label className="check-row"><input type="checkbox" checked={allowCopy} onChange={(e) => setAllowCopy(e.target.checked)} /> {t("Allow copying text")}</label>
+          <label className="check-row"><input type="checkbox" checked={allowModify} onChange={(e) => setAllowModify(e.target.checked)} /> {t("Allow editing and comments")}</label>
         </div>
       )}
     </Dialog>
@@ -212,16 +213,16 @@ export function WatermarkDialog({ onApply, onRemove, onClose }: { onApply: (text
   const [opacity, setOpacity] = useState(18);
   const [color, setColor] = useState("#888888");
   return (
-    <Dialog title="Watermark" onClose={onClose} footer={<>
-      <button className="btn danger" onClick={onRemove}>Remove watermark</button>
+    <Dialog title={t("Watermark")} onClose={onClose} footer={<>
+      <button className="btn danger" onClick={onRemove}>{t("Remove watermark")}</button>
       <span className="spacer" />
-      <button className="btn" onClick={onClose}>Cancel</button>
-      <button className="btn primary" disabled={!text.trim()} onClick={() => onApply(text, opacity / 100, color)}>Add to all pages</button>
+      <button className="btn" onClick={onClose}>{t("Cancel")}</button>
+      <button className="btn primary" disabled={!text.trim()} onClick={() => onApply(text, opacity / 100, color)}>{t("Add to all pages")}</button>
     </>}>
       <div className="form-grid">
-        <label>Text<input value={text} onChange={(e) => setText(e.target.value)} autoFocus /></label>
+        <label>{t("Text")}<input value={text} onChange={(e) => setText(e.target.value)} autoFocus /></label>
         <label>Opacity {opacity}%<input type="range" min={5} max={60} value={opacity} onChange={(e) => setOpacity(+e.target.value)} /></label>
-        <label className="check-row">Colour <input type="color" value={color} onChange={(e) => setColor(e.target.value)} /></label>
+        <label className="check-row">{t("Colour")} <input type="color" value={color} onChange={(e) => setColor(e.target.value)} /></label>
       </div>
     </Dialog>
   );
@@ -236,7 +237,7 @@ export function PromptDialog({ title, label, initial, hint, confirm, onOk, onClo
   return (
     <Dialog title={title} onClose={onClose} footer={<>
       <span className="spacer" />
-      <button className="btn" onClick={onClose}>Cancel</button>
+      <button className="btn" onClick={onClose}>{t("Cancel")}</button>
       <button className="btn primary" disabled={!v.trim()} onClick={() => onOk(v, flag)}>{confirm}</button>
     </>}>
       <div className="form-grid">
