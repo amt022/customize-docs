@@ -252,7 +252,7 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
             <button className="hub-card cs-card" onClick={() => go("creative")}>
               <span className="hub-icon">🎨</span>
               <strong>{t("Creative Studio")}</strong>
-              <span className="muted small">{t("Wedding cards for every ceremony, welcome board, car poster, thank-you card and a WhatsApp video, all from one set of details.")}</span>
+              <span className="muted small">{t("Wedding cards, festival greetings, invitations, business posters, visiting cards and certificates, ready to print or share on WhatsApp.")}</span>
               <span className="hub-go">{t("Open")} <i>→</i></span>
             </button>
             <button className="hub-card" onClick={() => go("tools")}>

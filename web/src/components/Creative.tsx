@@ -10,18 +10,32 @@ import {
   FESTIVALS, FESTIVAL_ORDER, OCCASIONS, OCCASION_ORDER, drawGreeting, drawParty, greetingSize, partySize,
   type FestivalId, type Greeting, type OccasionId, type Party,
 } from "../posters";
+import {
+  PROMO_KINDS, PROMO_ORDER, PROMO_THEMES, drawPromo, promoFormat, promoSample, sizesFor,
+  type Promo, type PromoId, type Unit,
+} from "../promo";
 import { jpegToPdf, zip } from "../wrap";
 import { creativeApi } from "../api";
 
 const STORE_CHANGED = "formeasy.creative.changedAt";
 
-type Mode = "wedding" | "greeting" | "party";
+type Mode = "wedding" | "greeting" | "party" | "promo";
 
 const STORE = "formeasy.creative";
 const STORE_G = "formeasy.creative.greeting";
 const STORE_P = "formeasy.creative.party";
 const STORE_E = "formeasy.creative.edits";
 const STORE_M = "formeasy.creative.mode";
+const STORE_PR = "formeasy.creative.promo";
+
+function loadPromos(): Record<PromoId, Promo> {
+  const all = Object.fromEntries(PROMO_ORDER.map((k) => [k, promoSample(k)])) as Record<PromoId, Promo>;
+  try {
+    const v = JSON.parse(localStorage.getItem(STORE_PR) ?? "null");
+    for (const k of PROMO_ORDER) if (v?.[k]) all[k] = { ...all[k], ...v[k], kind: k };
+  } catch { /* storage unavailable */ }
+  return all;
+}
 
 const later = (days: number) => new Date(Date.now() + days * 864e5).toISOString().slice(0, 10);
 
@@ -97,28 +111,32 @@ interface Design {
   paint: (ctx: CanvasRenderingContext2D, vertical: boolean, ov?: Overrides) => Item[];
   canVertical: boolean;
   sizeLabel: string;
-  /** finished size for a print shop (inches) and the resolution to print at */
-  print: [number, number, number];
+  /** finished size for a print shop (inches) and the resolution to print at; none = screen only */
+  print?: [number, number, number];
 }
 
 const EVENTS: Kind[] = KIND_ORDER.filter((k) => KINDS[k].event);
 
 export default function Creative() {
   useLang();
-  const [mode, setMode] = useState<Mode>(() => { try { const m = localStorage.getItem(STORE_M); return m === "greeting" || m === "party" ? m : "wedding"; } catch { return "wedding"; } });
+  const [mode, setMode] = useState<Mode>(() => { try { const m = localStorage.getItem(STORE_M); return m === "greeting" || m === "party" || m === "promo" ? m : "wedding"; } catch { return "wedding"; } });
   const [d, setD] = useState<Details>(() => load(STORE, DEFAULTS, (v) => ({ ...v, date: later(60) })));
   const [g, setG] = useState<Greeting>(() => load(STORE_G, G_DEFAULTS));
   const [parties, setParties] = useState<Record<OccasionId, Party>>(loadParties);
   const [occasion, setOccasion] = useState<OccasionId>(() => { try { const o = localStorage.getItem(STORE_P + ".current"); return o && o in OCCASIONS ? o as OccasionId : "birthday"; } catch { return "birthday"; } });
   const p = parties[occasion];
+  const [promos, setPromos] = useState<Record<PromoId, Promo>>(loadPromos);
+  const [promoKind, setPromoKind] = useState<PromoId>(() => { try { const k = localStorage.getItem(STORE_PR + ".current"); return k && k in PROMO_KINDS ? k as PromoId : "sale"; } catch { return "sale"; } });
+  const pr = promos[promoKind];
   const [edits, setEdits] = useState<Record<string, Overrides>>(() => load(STORE_E, {}));
-  const [current, setCurrent] = useState<Record<Mode, string>>({ wedding: "wedding", greeting: g.festival, party: occasion });
+  const [current, setCurrent] = useState<Record<Mode, string>>({ wedding: "wedding", greeting: g.festival, party: occasion, promo: promoKind });
   const [vertical, setVertical] = useState(false);
   const [photo, setPhoto] = useState<Pic | null>(null);
   const [original, setOriginal] = useState<Pic | null>(null);
   const [cutTol, setCutTol] = useState(30);
   const [pack, setPack] = useState<Kind[]>(KIND_ORDER);
   const [busy, setBusy] = useState<string | null>(null);
+  const [cropMarks, setCropMarks] = useState(false);
   const [progress, setProgress] = useState(0);
   const [videoSecs, setVideoSecs] = useState(15);
   const [music, setMusic] = useState<"none" | "shehnai" | "bells" | "dhol" | "file">("shehnai");
@@ -134,6 +152,7 @@ export default function Creative() {
   const set = <K extends keyof Details>(k: K, v: Details[K]) => setD((x) => ({ ...x, [k]: v }));
   const setGP = <K extends keyof Greeting>(k: K, v: Greeting[K]) => setG((x) => ({ ...x, [k]: v }));
   const setPP = <K extends keyof Party>(k: K, v: Party[K]) => setParties((all) => ({ ...all, [occasion]: { ...all[occasion], [k]: v } }));
+  const setPR = <K extends keyof Promo>(k: K, v: Promo[K]) => setPromos((all) => ({ ...all, [promoKind]: { ...all[promoKind], [k]: v } }));
   const setEvent = (k: Kind, field: "date" | "time" | "venue", v: string) =>
     setD((x) => ({ ...x, events: { ...x.events, [k]: { date: "", time: "", venue: "", ...x.events[k], [field]: v } } }));
 
@@ -143,25 +162,28 @@ export default function Creative() {
   useEffect(() => keep(STORE_P + ".current", occasion), [occasion]);
   useEffect(() => keep(STORE_E, edits), [edits]);
   useEffect(() => keep(STORE_M, mode), [mode]);
+  useEffect(() => keep(STORE_PR, promos), [promos]);
+  useEffect(() => keep(STORE_PR + ".current", promoKind), [promoKind]);
 
   // ------------------------------------------------------------ keep the details on the server too
   // (this browser, or the account when signed in, so they open on another device; photos stay here)
   const [sync, setSync] = useState<"loading" | "saving" | "saved" | "local">("loading");
   const loaded = useRef(false);
   const first = useRef(true);
-  const latest = useRef({ d, g, parties, edits });
-  latest.current = { d, g, parties, edits };
+  const latest = useRef({ d, g, parties, edits, promos });
+  latest.current = { d, g, parties, edits, promos };
   useEffect(() => {
     let gone = false;
     creativeApi.get().then((remote) => {
       if (gone) return;
       const localAt = (() => { try { return localStorage.getItem(STORE_CHANGED) ?? ""; } catch { return ""; } })();
       if (remote && remote.updatedAt > localAt) {
-        const r = remote.data as { d?: Details; g?: Greeting; parties?: Record<OccasionId, Party>; edits?: Record<string, Overrides> };
+        const r = remote.data as { d?: Details; g?: Greeting; parties?: Record<OccasionId, Party>; edits?: Record<string, Overrides>; promos?: Record<PromoId, Promo> };
         if (r.d) setD((x) => ({ ...x, ...r.d }));
         if (r.g) setG((x) => ({ ...x, ...r.g }));
         if (r.parties) setParties((x) => { const n = { ...x }; for (const o of OCCASION_ORDER) if (r.parties![o]) n[o] = { ...x[o], ...r.parties![o], occasion: o }; return n; });
         if (r.edits) setEdits(r.edits);
+        if (r.promos) setPromos((x) => { const n = { ...x }; for (const k of PROMO_ORDER) if (r.promos![k]) n[k] = { ...x[k], ...r.promos![k], kind: k }; return n; });
         keep(STORE_CHANGED, remote.updatedAt);
         first.current = true; // the state just applied came from the server; do not send it back
       } else if (localAt) {
@@ -179,12 +201,12 @@ export default function Creative() {
     if (!loaded.current) return;
     setSync("saving");
     const timer = setTimeout(() => {
-      creativeApi.put({ d, g, parties, edits })
+      creativeApi.put({ d, g, parties, edits, promos })
         .then((r) => { keep(STORE_CHANGED, r.updatedAt); setSync("saved"); })
         .catch(() => setSync("local"));
     }, 1500);
     return () => clearTimeout(timer);
-  }, [d, g, parties, edits]);
+  }, [d, g, parties, edits, promos]);
   // script / Devanagari fonts may arrive after the first paint
   useEffect(() => { document.fonts?.ready.then(() => setFontsTick((n) => n + 1)); }, []);
 
@@ -194,6 +216,14 @@ export default function Creative() {
       id: f, label: FESTIVALS[f].en, size: greetingSize, canVertical: true, sizeLabel: "Square 1:1", print: [6, 6, 300],
       paint: (ctx, v, ov) => drawGreeting(ctx, { ...g, festival: f as FestivalId }, photo, v, ov),
     }));
+    if (mode === "promo") return PROMO_ORDER.map((k) => {
+      const f = promoFormat(promos[k]);
+      return {
+        id: k, label: PROMO_KINDS[k].en, size: (v: boolean) => promoFormat(promos[k], v).px, canVertical: PROMO_KINDS[k].shape === "poster",
+        sizeLabel: f.label, print: f.print,
+        paint: (ctx: CanvasRenderingContext2D, v: boolean, ov?: Overrides) => drawPromo(ctx, promos[k], photo, v, ov),
+      };
+    });
     if (mode === "party") return OCCASION_ORDER.map((o) => ({
       id: o, label: OCCASIONS[o].en, size: partySize, canVertical: true, sizeLabel: "Card 5×7", print: [5, 7, 300],
       paint: (ctx, v, ov) => drawParty(ctx, parties[o as OccasionId], photo, v, ov),
@@ -204,10 +234,10 @@ export default function Creative() {
       print: (k === "welcome" ? [24, 36, 150] : k === "car" ? [36, 12, 150] : [5, 7, 300]) as [number, number, number],
       paint: (ctx, v, ov) => draw(ctx, k, d, photo, v && k !== "car", ov),
     }));
-  }, [mode, d, g, parties, photo]);
+  }, [mode, d, g, parties, promos, photo]);
 
   const design = designs.find((x) => x.id === current[mode]) ?? designs[0];
-  const vert = vertical && design.canVertical;
+  const vert = vertical && design.canVertical && mode !== "promo"; // posters pick their size in the side panel
   const editKey = (id: string, v: boolean) => `${mode}:${id}${v ? ":v" : ""}`;
   const ov = edits[editKey(design.id, vert)] ?? {};
   const [w, h] = design.size(vert);
@@ -217,6 +247,7 @@ export default function Creative() {
     setSelected(null);
     if (mode === "greeting") setGP("festival", id as FestivalId);
     if (mode === "party") setOccasion(id as OccasionId);
+    if (mode === "promo") setPromoKind(id as PromoId);
   };
 
   // ------------------------------------------------------------ painting
@@ -330,18 +361,26 @@ export default function Creative() {
     ds.paint(c.getContext("2d")!, v, edits[editKey(ds.id, v)]);
     return c;
   };
-  const base = () => mode === "wedding" ? `${clean(d.bride)}-${clean(d.groom)}` : mode === "party" ? clean(p.name) : clean(g.from);
+  const base = () => mode === "wedding" ? `${clean(d.bride)}-${clean(d.groom)}` : mode === "party" ? clean(p.name) : mode === "promo" ? clean(pr.org || pr.name || pr.title) : clean(g.from);
   const fileName = (ds: Design, v: boolean, ext: string) => `${base()}-${ds.id}${v ? "-whatsapp" : ""}.${ext}`;
 
   const exportPrint = () => run(t("Preparing…"), async () => {
+    if (!design.print) return;
     const [wi, hi, dpi] = design.print;
     const [dw, dh] = design.size(false);
-    const sheet = printSheet((ctx) => design.paint(ctx, false, edits[editKey(design.id, false)]), dw, dh, [wi, hi], dpi);
+    const sheet = printSheet((ctx) => design.paint(ctx, false, edits[editKey(design.id, false)]), dw, dh, [wi, hi], dpi, 3, cropMarks);
     const jpg = await bytes(await toBlob(sheet.canvas, "image/jpeg", 0.95));
     save(jpegToPdf(jpg, sheet.canvas.width, sheet.canvas.height, [sheet.wPt, sheet.hPt]), fileName(design, false, "print-shop.pdf"));
   });
 
   const exportOne = (fmt: "png" | "jpg" | "pdf") => run(t("Preparing…"), async () => {
+    if (fmt === "pdf" && design.print && !vert) {
+      const [wi, hi, dpi] = design.print;
+      const [dw, dh] = design.size(false);
+      const sheet = printSheet((ctx) => design.paint(ctx, false, edits[editKey(design.id, false)]), dw, dh, [wi, hi], dpi, 0);
+      const jpg = await bytes(await toBlob(sheet.canvas, "image/jpeg", 0.93));
+      return save(jpegToPdf(jpg, sheet.canvas.width, sheet.canvas.height, [sheet.wPt, sheet.hPt]), fileName(design, false, "pdf"));
+    }
     const c = renderDesign(design, vert);
     if (fmt === "png") return save(await toBlob(c, "image/png"), fileName(design, vert, "png"));
     const jpg = await toBlob(c, "image/jpeg", 0.92);
@@ -359,7 +398,7 @@ export default function Creative() {
       files.push({ name: `pdf/${fileName(ds, false, "pdf")}`, data: await bytes(jpegToPdf(jpg, c.width, c.height)) });
       if (ds.canVertical) files.push({ name: `whatsapp/${fileName(ds, true, "jpg")}`, data: await bytes(await toBlob(renderDesign(ds, true), "image/jpeg", 0.9)) });
     }
-    save(new Blob([zip(files)], { type: "application/zip" }), `${base()}-${mode === "wedding" ? "wedding-package" : mode === "greeting" ? "festival-greetings" : "invitations"}.zip`);
+    save(new Blob([zip(files)], { type: "application/zip" }), `${base()}-${mode === "wedding" ? "wedding-package" : mode === "greeting" ? "festival-greetings" : mode === "promo" ? "posters" : "invitations"}.zip`);
   });
 
   const exportVideo = () => run(t("Recording video…"), async () => {
@@ -382,9 +421,9 @@ export default function Creative() {
       ))}
     </div>
   );
-  const themePick = (value: string, on: (v: string) => void) => (
+  const themePick = (value: string, on: (v: string) => void, list = THEMES) => (
     <div className="cs-themes" role="radiogroup" aria-label={t("Colour theme")}>
-      {THEMES.map((th) => (
+      {list.map((th) => (
         <button key={th.id} role="radio" aria-checked={value === th.id} className={value === th.id ? "on" : ""} onClick={() => on(th.id)} title={th.name}>
           <span style={{ background: `linear-gradient(135deg, ${th.bg[0]}, ${th.bg[1]})`, borderColor: th.accent }} />
           {t(th.name)}
@@ -454,12 +493,13 @@ export default function Creative() {
           sync === "saving" ? t("Saving…") : sync === "saved" ? "✓ " + t("Saved") : sync === "local" ? t("Saved on this device only") : ""
         }</span></h1>
         <div className="cs-modes" role="tablist">
-          {([["wedding", "💍 Wedding cards"], ["greeting", "🪔 Festival greetings"], ["party", "🎂 Birthday & family events"]] as [Mode, string][]).map(([m, l]) => (
+          {([["wedding", "💍 Wedding cards"], ["greeting", "🪔 Festival greetings"], ["party", "🎂 Birthday & family events"], ["promo", "📢 Posters & business"]] as [Mode, string][]).map(([m, l]) => (
             <button key={m} role="tab" aria-selected={mode === m} className={mode === m ? "on" : ""} onClick={() => { setMode(m); setSelected(null); }}>{t(l)}</button>
           ))}
         </div>
         <p className="lede">{t(mode === "wedding"
           ? "Enter the wedding details once. Every card, the welcome board, the car poster, the thank-you card and the video come out matching."
+          : mode === "promo" ? "Posters for a sale, hiring, admission, coaching batch, event, notice, to-let or missing person, plus visiting cards and certificates. Any size: A3, A4, A5, social media posts, flex banners, standees or your own size."
           : mode === "greeting" ? "Pick a festival, add your name and share the greeting on WhatsApp, Instagram or print."
             : "Invitations for birthdays, anniversaries, griha pravesh, godh bharai and naming ceremonies.")}</p>
       </div>
@@ -571,6 +611,42 @@ export default function Creative() {
               {langSeg(p.lang, (v) => setPP("lang", v))}
             </details>
           </>}
+          {mode === "promo" && (() => {
+            const pk = PROMO_KINDS[pr.kind];
+            return <>
+              <details open>
+                <summary>{t(pk.en)}</summary>
+                {pk.shape !== "card" && <div className="cs-grid">
+                  <label>{t("Heading")}<input value={pr.title} onChange={(e) => setPR("title", e.target.value)} /></label>
+                  <label>{t("Heading in Hindi")}<input lang="hi" value={pr.titleHi} onChange={(e) => setPR("titleHi", e.target.value)} /></label>
+                </div>}
+                {pk.nameLabel && <label>{t(pk.nameLabel)}<input value={pr.name} onChange={(e) => setPR("name", e.target.value)} /></label>}
+                <label>{t(pk.highlightLabel)}<input value={pr.highlight} onChange={(e) => setPR("highlight", e.target.value)} /></label>
+                <label>{t(pk.pointsLabel)}<textarea rows={pk.paragraph ? 4 : 4} value={pr.points} onChange={(e) => setPR("points", e.target.value)} /></label>
+                <label>{t(pk.shape === "card" ? "Business name" : "Shop, school or organisation")}<input value={pr.org} onChange={(e) => setPR("org", e.target.value)} /></label>
+                {photoPick}
+                {pr.kind === "missing" && <p className="muted small">{t("Use a clear, recent face photo. Inform the police (112) as well.")}</p>}
+              </details>
+              <details open>
+                <summary>{t("Contact and date")}</summary>
+                {pk.shape !== "cert" && <>
+                  <label>{t("Phone")}<input inputMode="tel" value={pr.phone} onChange={(e) => setPR("phone", e.target.value)} /></label>
+                  <label>{t(pr.kind === "event" ? "Venue" : "Address")}<input value={pr.address} onChange={(e) => setPR("address", e.target.value)} /></label>
+                </>}
+                {pk.dateLabel && <div className="cs-grid">
+                  <label>{t(pk.dateLabel[0])}<input type="date" value={pr.date} onChange={(e) => setPR("date", e.target.value)} /></label>
+                  {pk.time && <label>{t("Time")}<input type="time" value={pr.time} onChange={(e) => setPR("time", e.target.value)} /></label>}
+                </div>}
+                {pk.shape !== "cert" && <label>{t("QR code link (website, map, form or UPI)")}<input inputMode="url" placeholder="https://…" value={pr.qr} onChange={(e) => setPR("qr", e.target.value)} /></label>}
+                <button className="link" onClick={() => setPromos((all) => ({ ...all, [promoKind]: promoSample(promoKind) }))}>↺ {t("Start again with the example")}</button>
+              </details>
+              <details open>
+                <summary>{t("Style")}</summary>
+                {themePick(pr.theme, (v) => setPR("theme", v), PROMO_THEMES)}
+                {pk.shape !== "card" && langSeg(pr.lang, (v) => setPR("lang", v))}
+              </details>
+            </>;
+          })()}
         </aside>
 
         <section className="cs-stage" onKeyDown={onKey}>
@@ -583,19 +659,50 @@ export default function Creative() {
             ))}
           </div>
           <div className="cs-toolbar">
-            {design.canVertical && (
+            {design.canVertical && mode !== "promo" && (
               <div className="seg" role="radiogroup" aria-label={t("Size")}>
                 <button role="radio" aria-checked={!vertical} className={!vertical ? "on" : ""} onClick={() => { setVertical(false); setSelected(null); }}>{t(design.sizeLabel)}</button>
                 <button role="radio" aria-checked={vertical} className={vertical ? "on" : ""} onClick={() => { setVertical(true); setSelected(null); }}>{t("WhatsApp 9:16")}</button>
               </div>
             )}
-            <span className="muted small">{w} × {h} px</span>
+            {mode === "promo" && (() => {
+              const shape = PROMO_KINDS[pr.kind].shape, list = sizesFor(pr.kind);
+              const value = shape === "poster" ? pr.size : list.some((z) => z.id === pr.size) ? pr.size : list[0].id;
+              return (
+                <label className="cs-size">{t("Size")}
+                  <select value={value} onChange={(e) => { setPR("size", e.target.value); setSelected(null); }}>
+                    {[...new Set(list.map((z) => z.group))].map((grp) => (
+                      <optgroup key={grp} label={t(grp)}>
+                        {list.filter((z) => z.group === grp).map((z) => <option key={z.id} value={z.id}>{t(z.label)}</option>)}
+                      </optgroup>
+                    ))}
+                    {shape === "poster" && <option value="custom">{t("Custom size…")}</option>}
+                  </select>
+                </label>
+              );
+            })()}
+            <span className="muted small">{w} × {h} px{design.print && !vert && ` · ${t("prints at")} ${+design.print[0].toFixed(2)} × ${+design.print[1].toFixed(2)} in`}</span>
             <span className="spacer" />
             <button className="btn" disabled={!!busy} onClick={() => exportOne("png")}>PNG</button>
             <button className="btn" disabled={!!busy} onClick={() => exportOne("jpg")}>JPG</button>
             <button className="btn primary" disabled={!!busy} onClick={() => exportOne("pdf")}>{t("PDF for print")}</button>
-            {!vert && <button className="btn" disabled={!!busy} onClick={exportPrint} title={t("Bleed + crop marks")}>{t("Print-shop PDF")}</button>}
+            {!vert && design.print && <>
+              <button className="btn" disabled={!!busy} onClick={exportPrint} title={t("Adds a 3 mm bleed on every side for the printer to trim")}>{t("Print-shop PDF")}</button>
+              <label className="check small" title={t("White border with cutting marks around the bleed")}><input type="checkbox" checked={cropMarks} onChange={(e) => setCropMarks(e.target.checked)} /> {t("Crop marks")}</label>
+            </>}
           </div>
+          {mode === "promo" && PROMO_KINDS[pr.kind].shape === "poster" && pr.size === "custom" && (
+            <div className="cs-custom">
+              <label>{t("Width")}<input type="number" min={0.1} step="any" value={pr.cw} onChange={(e) => setPR("cw", +e.target.value)} /></label>
+              <span aria-hidden>×</span>
+              <label>{t("Height")}<input type="number" min={0.1} step="any" value={pr.ch} onChange={(e) => setPR("ch", +e.target.value)} /></label>
+              <label>{t("Unit")}
+                <select value={pr.unit} onChange={(e) => setPR("unit", e.target.value as Unit)}>
+                  {([["ft", "feet"], ["in", "inches"], ["cm", "cm"], ["mm", "mm"], ["px", "pixels"]] as [Unit, string][]).map(([v, l]) => <option key={v} value={v}>{t(l)}</option>)}
+                </select>
+              </label>
+            </div>
+          )}
           <div className="cs-editbar" aria-live="polite">
             {sel ? (
               <>
@@ -641,10 +748,11 @@ export default function Creative() {
             </ul>
             <button className="btn primary block" disabled={!!busy || !pack.length} onClick={exportPack}>⬇ {t("Download package (ZIP)")}</button>
           </> : <>
-            <h2>{mode === "greeting" ? t("All festivals") : t("All occasions")}</h2>
+            <h2>{mode === "greeting" ? t("All festivals") : mode === "promo" ? t("All designs") : t("All occasions")}</h2>
             <p className="muted small">{t("Every design in one ZIP with your name: print PNG, PDF and WhatsApp size.")}</p>
             <button className="btn primary block" disabled={!!busy} onClick={exportPack}>⬇ {t("Download all (ZIP)")}</button>
           </>}
+          {(mode === "wedding" || design.canVertical) && <>
           <h2>{mode === "wedding" ? t("Invitation video") : t("Video for WhatsApp status")}</h2>
           <p className="muted small">{mode === "wedding" ? t("A vertical slideshow of the ticked cards with fades and falling petals, ready for WhatsApp status.") : t("This design with a slow zoom and falling petals.")}</p>
           <div className="seg" role="radiogroup" aria-label={t("Length")}>
@@ -666,6 +774,7 @@ export default function Creative() {
           </label>
           {music === "file" && <p className="muted small">{t("Use only music you have the right to share.")}</p>}
           <button className="btn block" disabled={!!busy} onClick={exportVideo}>🎬 {t("Make video")}</button>
+          </>}
           {busy && (
             <p className="cs-busy" role="status">
               {busy}{progress > 0 && ` ${Math.round(progress * 100)}%`}

@@ -1057,10 +1057,12 @@ export function cutout(src: Pic, tolerance = 30): HTMLCanvasElement {
  * the trim (edge pixels stretched outward) and crop marks in a white slug. Returns the canvas and its
  * physical size in points (1/72 in) for the PDF page.
  */
-export function printSheet(paint: (ctx: CanvasRenderingContext2D) => void, w: number, h: number, trimIn: [number, number], dpi = 300, bleedMm = 3) {
+/** Redraw a design at print resolution. `bleedMm` extends the colour past the trim (0 = exact size);
+ *  `marks` adds a white 8 mm slug with crop marks around it. */
+export function printSheet(paint: (ctx: CanvasRenderingContext2D) => void, w: number, h: number, trimIn: [number, number], dpi = 300, bleedMm = 3, marks = false) {
   const scale = Math.max(1, (trimIn[0] * dpi) / w);
   const ppi = (w * scale) / trimIn[0];
-  const bleed = Math.round((bleedMm / 25.4) * ppi), slug = Math.round((8 / 25.4) * ppi);
+  const bleed = Math.round((bleedMm / 25.4) * ppi), slug = marks ? Math.round((8 / 25.4) * ppi) : 0;
   const tw = Math.round(w * scale), th = Math.round(h * scale);
   const art = document.createElement("canvas");
   art.width = tw; art.height = th;
@@ -1081,11 +1083,12 @@ export function printSheet(paint: (ctx: CanvasRenderingContext2D) => void, w: nu
     x.drawImage(art, sx, sy, 1, 1, dx, dy, bleed, bleed);
   }
   x.drawImage(art, o, o);
+  const pt = (px: number) => (px / ppi) * 72;
+  if (!marks) return { canvas: c, wPt: pt(c.width), hPt: pt(c.height), dpi: Math.round(ppi) };
   // crop marks at the trim lines, in the slug only
   x.strokeStyle = "#000000"; x.lineWidth = Math.max(1, ppi / 300);
   const len = slug - Math.round(ppi * 0.04);
   for (const tx of [o, o + tw]) for (const [y0, y1] of [[0, len], [c.height - len, c.height]]) { x.beginPath(); x.moveTo(tx, y0); x.lineTo(tx, y1); x.stroke(); }
   for (const ty of [o, o + th]) for (const [x0, x1] of [[0, len], [c.width - len, c.width]]) { x.beginPath(); x.moveTo(x0, ty); x.lineTo(x1, ty); x.stroke(); }
-  const pt = (px: number) => (px / ppi) * 72;
   return { canvas: c, wPt: pt(c.width), hPt: pt(c.height), dpi: Math.round(ppi) };
 }
