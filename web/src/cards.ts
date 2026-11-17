@@ -194,10 +194,10 @@ export function corner(ctx: CanvasRenderingContext2D, x: number, y: number, s: n
   ctx.restore();
 }
 
-export type Frame = "ornate" | "arch" | "simple" | "garland" | "scallop" | "deco" | "temple";
+export type Frame = "ornate" | "arch" | "simple" | "garland" | "scallop" | "deco" | "temple" | "blockprint";
 export const FRAMES: [Frame, string][] = [
   ["ornate", "Ornate corners"], ["arch", "Mandap arch"], ["garland", "Marigold garland"], ["temple", "Temple pillars"],
-  ["scallop", "Lace scallop"], ["deco", "Art deco"], ["simple", "Simple"],
+  ["scallop", "Lace scallop"], ["deco", "Art deco"], ["blockprint", "Block print"], ["simple", "Simple"],
 ];
 
 export function background(ctx: CanvasRenderingContext2D, w: number, h: number, t: Theme, frame: Frame = "ornate") {
@@ -223,6 +223,7 @@ export function background(ctx: CanvasRenderingContext2D, w: number, h: number, 
   if (frame === "scallop") return scallop(ctx, w, h, m, t);
   if (frame === "deco") return deco(ctx, w, h, m, t);
   if (frame === "temple") return temple(ctx, w, h, m, t);
+  if (frame === "blockprint") return blockprint(ctx, w, h, m, t);
   // double border
   ctx.lineWidth = Math.min(w, h) * 0.006; ctx.strokeRect(m, m, w - 2 * m, h - 2 * m);
   ctx.lineWidth = Math.min(w, h) * 0.002; ctx.strokeRect(m * 1.5, m * 1.5, w - 3 * m, h - 3 * m);
@@ -231,6 +232,73 @@ export function background(ctx: CanvasRenderingContext2D, w: number, h: number, 
   corner(ctx, w - m, m, s, Math.PI / 2, t);
   corner(ctx, w - m, h - m, s, Math.PI, t);
   corner(ctx, m, h - m, s, -Math.PI / 2, t);
+}
+
+/** Jaipur block-print border: a tinted band of stamped flowers and diamonds between two rules. */
+function blockprint(ctx: CanvasRenderingContext2D, w: number, h: number, m: number, t: Theme) {
+  const s = Math.min(w, h), b = s * 0.075, o = m * 0.8;
+  ctx.save();
+  ctx.fillStyle = t.accent; ctx.globalAlpha = 0.13;
+  ctx.fillRect(o, o, w - 2 * o, b); ctx.fillRect(o, h - o - b, w - 2 * o, b);
+  ctx.fillRect(o, o + b, b, h - 2 * o - 2 * b); ctx.fillRect(w - o - b, o + b, b, h - 2 * o - 2 * b);
+  ctx.globalAlpha = 1;
+  ctx.strokeStyle = t.accent; ctx.lineWidth = s * 0.005;
+  ctx.strokeRect(o, o, w - 2 * o, h - 2 * o);
+  ctx.lineWidth = s * 0.0025;
+  ctx.strokeRect(o + b, o + b, w - 2 * (o + b), h - 2 * (o + b));
+  const stamp = (x: number, y: number, k: number) => {
+    if (k % 2 === 0) {
+      for (let i = 0; i < 6; i++) { ctx.save(); ctx.translate(x, y); ctx.rotate((i / 6) * Math.PI * 2); petal(ctx, b * 0.36, b * 0.16); ctx.fillStyle = t.accent; ctx.fill(); ctx.restore(); }
+      ctx.beginPath(); ctx.arc(x, y, b * 0.08, 0, Math.PI * 2); ctx.fillStyle = t.soft; ctx.fill();
+    } else {
+      ctx.fillStyle = t.soft;
+      ctx.beginPath(); ctx.moveTo(x, y - b * 0.2); ctx.lineTo(x + b * 0.13, y); ctx.lineTo(x, y + b * 0.2); ctx.lineTo(x - b * 0.13, y); ctx.closePath(); ctx.fill();
+      for (const d of [-1, 1]) { ctx.beginPath(); ctx.arc(x + d * b * 0.26, y, b * 0.045, 0, Math.PI * 2); ctx.fill(); }
+    }
+  };
+  const step = b * 0.9;
+  const along = (len: number) => { const n = Math.max(2, Math.round(len / step)); return Array.from({ length: n }, (_, i) => (i + 0.5) * (len / n)); };
+  along(w - 2 * o - 2 * b).forEach((x, i) => { stamp(o + b + x, o + b / 2, i); stamp(o + b + x, h - o - b / 2, i); });
+  along(h - 2 * o - 2 * b).forEach((y, i) => { stamp(o + b / 2, o + b + y, i + 1); stamp(w - o - b / 2, o + b + y, i + 1); });
+  for (const [x, y] of [[o + b / 2, o + b / 2], [w - o - b / 2, o + b / 2], [o + b / 2, h - o - b / 2], [w - o - b / 2, h - o - b / 2]]) {
+    for (let i = 0; i < 8; i++) { ctx.save(); ctx.translate(x, y); ctx.rotate((i / 8) * Math.PI * 2); petal(ctx, b * 0.42, b * 0.14); ctx.fillStyle = i % 2 ? t.soft : t.accent; ctx.fill(); ctx.restore(); }
+  }
+  ctx.restore();
+}
+
+/** A decorated elephant (side view) facing right; mirror with sd = -1. `up` raises the trunk. */
+export function elephant(ctx: CanvasRenderingContext2D, x: number, y: number, s: number, sd: 1 | -1, t: Theme, up = true) {
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(sd, 1);
+  ctx.fillStyle = t.accent; ctx.strokeStyle = t.accent; ctx.lineCap = "round";
+  // legs, tail
+  for (const lx of [-0.4, -0.18, 0.12, 0.33]) ctx.fillRect(lx * s, 0.15 * s, 0.14 * s, 0.45 * s);
+  ctx.lineWidth = 0.035 * s; ctx.beginPath(); ctx.moveTo(-0.55 * s, -0.08 * s); ctx.quadraticCurveTo(-0.7 * s, 0.05 * s, -0.66 * s, 0.25 * s); ctx.stroke();
+  // body and head
+  ctx.beginPath(); ctx.ellipse(0, 0, 0.58 * s, 0.37 * s, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0.5 * s, -0.2 * s, 0.27 * s, 0, Math.PI * 2); ctx.fill();
+  // trunk
+  ctx.lineWidth = 0.13 * s;
+  ctx.beginPath(); ctx.moveTo(0.7 * s, -0.12 * s);
+  if (up) { ctx.quadraticCurveTo(0.95 * s, 0.1 * s, 0.98 * s, -0.25 * s); ctx.quadraticCurveTo(1.0 * s, -0.5 * s, 0.86 * s, -0.55 * s); }
+  else { ctx.quadraticCurveTo(0.9 * s, 0.2 * s, 0.82 * s, 0.45 * s); }
+  ctx.stroke();
+  // tusk
+  ctx.strokeStyle = "#fff8e6"; ctx.lineWidth = 0.045 * s;
+  ctx.beginPath(); ctx.moveTo(0.62 * s, 0.0); ctx.quadraticCurveTo(0.74 * s, 0.1 * s, 0.84 * s, 0.04 * s); ctx.stroke();
+  // ear
+  ctx.fillStyle = t.soft;
+  ctx.beginPath(); ctx.ellipse(0.36 * s, -0.12 * s, 0.15 * s, 0.24 * s, -0.15, 0, Math.PI * 2); ctx.fill();
+  // decorated saddle cloth (jhool) with fringe, and a forehead ornament
+  ctx.fillStyle = t.bg[1];
+  ctx.beginPath(); ctx.moveTo(-0.34 * s, -0.33 * s); ctx.lineTo(0.18 * s, -0.36 * s); ctx.lineTo(0.22 * s, 0.12 * s); ctx.quadraticCurveTo(-0.06 * s, 0.22 * s, -0.36 * s, 0.12 * s); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = t.soft; ctx.lineWidth = 0.02 * s; ctx.stroke();
+  ctx.fillStyle = t.soft;
+  for (let i = 0; i < 7; i++) { const fx = -0.33 * s + i * 0.09 * s; ctx.beginPath(); ctx.arc(fx, 0.16 * s + Math.sin((i / 6) * Math.PI) * 0.05 * s, 0.022 * s, 0, Math.PI * 2); ctx.fill(); }
+  mandala(ctx, -0.07 * s, -0.1 * s, 0.13 * s, { ...t, accent: t.soft, soft: t.accent });
+  ctx.beginPath(); ctx.moveTo(0.55 * s, -0.47 * s); ctx.lineTo(0.62 * s, -0.36 * s); ctx.lineTo(0.55 * s, -0.25 * s); ctx.lineTo(0.48 * s, -0.36 * s); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = t.bg[1]; ctx.beginPath(); ctx.arc(0.6 * s, -0.24 * s, 0.025 * s, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
 }
 
 /** Strings of marigolds hanging from the top edge, with a thin border. */
@@ -346,16 +414,22 @@ function temple(ctx: CanvasRenderingContext2D, w: number, h: number, m: number, 
   ctx.restore();
 }
 
-export type Emblem = "mandala" | "lotus" | "kalash" | "peacock" | "rings" | "diya" | "shehnai" | "none";
+export type Emblem = "mandala" | "lotus" | "kalash" | "peacock" | "rings" | "diya" | "shehnai" | "elephants" | "none";
 export const EMBLEMS: [Emblem, string][] = [
   ["mandala", "Mandala"], ["lotus", "Lotus"], ["kalash", "Kalash"], ["peacock", "Peacock feather"],
-  ["rings", "Rings"], ["diya", "Diya"], ["shehnai", "Shehnai pair"], ["none", "None"],
+  ["rings", "Rings"], ["diya", "Diya"], ["shehnai", "Shehnai pair"], ["elephants", "Royal elephants"], ["none", "None"],
 ];
 
 /** The ornament at the top of a card, centred on (cx, cy), about 2r wide. */
 export function emblem(ctx: CanvasRenderingContext2D, kind: Emblem, cx: number, cy: number, r: number, t: Theme) {
   ctx.save();
   if (kind === "mandala") mandala(ctx, cx, cy, r, t);
+  else if (kind === "elephants") {
+    // wider than the other ornaments: two elephants greet each other across a small mandala
+    mandala(ctx, cx, cy - r * 0.25, r * 0.5, t);
+    elephant(ctx, cx - r * 1.75, cy + r * 0.05, r * 1.05, 1, t);
+    elephant(ctx, cx + r * 1.75, cy + r * 0.05, r * 1.05, -1, t);
+  }
   else if (kind === "lotus") {
     const layers: [number, number, number, string][] = [[7, 1.05, 0.34, t.soft], [5, 0.95, 0.36, t.accent], [3, 0.8, 0.3, t.soft]];
     for (const [n, len, wid, col] of layers) for (let i = 0; i < n; i++) {
@@ -438,6 +512,10 @@ export const STYLE_PRESETS: StylePreset[] = [
   { id: "mint", name: "Mint Fresh", theme: "mint", frame: "simple", emblem: "kalash" },
   { id: "sky", name: "Sky Breeze", theme: "sky", frame: "scallop", emblem: "lotus" },
   { id: "classic", name: "Classic White", theme: "minimal", frame: "simple", emblem: "mandala" },
+  { id: "haathi", name: "Royal Elephants", theme: "royal", frame: "ornate", emblem: "elephants" },
+  { id: "jaipur", name: "Jaipur Block Print", theme: "ivory", frame: "blockprint", emblem: "elephants" },
+  { id: "bollywood", name: "Bollywood Masala", theme: "kumkum", frame: "blockprint", emblem: "mandala" },
+  { id: "indigo", name: "Indigo Block Print", theme: "sky", frame: "blockprint", emblem: "lotus" },
 ];
 
 /** Pillars and a cusped (Mughal / temple) arch, with hanging bells and a marigold garland. */

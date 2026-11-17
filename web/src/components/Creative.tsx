@@ -213,7 +213,8 @@ export default function Creative() {
   // ------------------------------------------------------------ designs of the current mode
   const designs: Design[] = useMemo(() => {
     if (mode === "greeting") return FESTIVAL_ORDER.map((f) => ({
-      id: f, label: FESTIVALS[f].en, size: greetingSize, canVertical: true, sizeLabel: "Square 1:1", print: [6, 6, 300],
+      id: f, label: FESTIVALS[f].en, size: (v: boolean) => greetingSize(v, g.wide), canVertical: true,
+      sizeLabel: g.wide ? "Banner 16:9" : "Square 1:1", print: (g.wide ? [16, 9, 150] : [6, 6, 300]) as [number, number, number],
       paint: (ctx, v, ov) => drawGreeting(ctx, { ...g, festival: f as FestivalId }, photo, v, ov),
     }));
     if (mode === "promo") return PROMO_ORDER.map((k) => {
@@ -659,7 +660,15 @@ export default function Creative() {
             ))}
           </div>
           <div className="cs-toolbar">
-            {design.canVertical && mode !== "promo" && (
+            {mode === "greeting" && (
+              <div className="seg" role="radiogroup" aria-label={t("Size")}>
+                {([["Square 1:1", false, false], ["Banner 16:9", false, true], ["WhatsApp 9:16", true, false]] as [string, boolean, boolean][]).map(([l, v, wd]) => {
+                  const on = vertical === v && (v || !!g.wide === wd);
+                  return <button key={l} role="radio" aria-checked={on} className={on ? "on" : ""} onClick={() => { setVertical(v); if (!v) setGP("wide", wd); setSelected(null); }}>{t(l)}</button>;
+                })}
+              </div>
+            )}
+            {design.canVertical && mode !== "promo" && mode !== "greeting" && (
               <div className="seg" role="radiogroup" aria-label={t("Size")}>
                 <button role="radio" aria-checked={!vertical} className={!vertical ? "on" : ""} onClick={() => { setVertical(false); setSelected(null); }}>{t(design.sizeLabel)}</button>
                 <button role="radio" aria-checked={vertical} className={vertical ? "on" : ""} onClick={() => { setVertical(true); setSelected(null); }}>{t("WhatsApp 9:16")}</button>

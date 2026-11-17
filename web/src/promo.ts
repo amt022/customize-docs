@@ -7,7 +7,7 @@ import {
 
 export const SANS = `"Segoe UI", "Noto Sans Devanagari", "Nirmala UI", Mangal, Arial, sans-serif`;
 
-export type PromoId = "sale" | "hiring" | "admission" | "coaching" | "event" | "notice" | "tolet" | "missing" | "service" | "visiting" | "certificate";
+export type PromoId = "sale" | "hiring" | "admission" | "coaching" | "event" | "notice" | "tolet" | "missing" | "service" | "business" | "visiting" | "certificate";
 
 export interface Promo {
   kind: PromoId;
@@ -52,6 +52,7 @@ export const PROMO_KINDS: Record<PromoId, PromoKind> = {
   tolet: { en: "To-Let / For Rent", hi: "किराये के लिए", shape: "poster", highlightLabel: "Rent", pointsLabel: "Details (one per line)", defaultTheme: "yellow" },
   missing: { en: "Missing / Lost", hi: "गुमशुदा / खोया", shape: "poster", highlightLabel: "Reward (optional)", nameLabel: "Name and age (or the lost item)", pointsLabel: "Description (one per line)", dateLabel: ["Missing since", "कब से लापता"], defaultTheme: "white" },
   service: { en: "Shop / Service Ad", hi: "दुकान / सेवा विज्ञापन", shape: "poster", highlightLabel: "Offer or price", pointsLabel: "Services (one per line)", defaultTheme: "teal" },
+  business: { en: "Business / Social media post", hi: "बिज़नेस / सोशल मीडिया पोस्ट", shape: "poster", highlightLabel: "Small line above the heading", nameLabel: "Name under the photo (optional)", pointsLabel: "Description", paragraph: true, defaultTheme: "corporate" },
   visiting: { en: "Visiting Card", hi: "विज़िटिंग कार्ड", shape: "card", highlightLabel: "Designation", nameLabel: "Name", pointsLabel: "Email, website (one per line)", defaultTheme: "blue" },
   certificate: { en: "Certificate", hi: "प्रमाण पत्र", shape: "cert", highlightLabel: "Signed by (comma separated)", nameLabel: "Presented to", pointsLabel: "For (reason)", paragraph: true, dateLabel: ["Date", "दिनांक"], defaultTheme: "blue" },
 };
@@ -70,6 +71,7 @@ export const PROMO_THEMES: Theme[] = [
   P("teal", "Teal Pro", ["#0f766e", "#053b37"], "#ffffff", "#ffd166", "#99f6e4"),
   P("pink", "Hot Pink", ["#db2777", "#7a0f3f"], "#ffffff", "#fde047", "#fbcfe8"),
   P("sky", "Sky & Navy", ["#e0f2fe", "#bae6fd"], "#0c2d57", "#1d4ed8", "#3b6ea8"),
+  P("corporate", "Corporate Navy", ["#16264d", "#0a1430"], "#ffffff", "#ffc72c", "#9db8ff"),
   P("cream", "Cream & Maroon", ["#fff8e7", "#f3e4c3"], "#4a0d12", "#a4161a", "#8a6a3b"),
 ];
 export const promoTheme = (id: string) => PROMO_THEMES.find((t) => t.id === id) ?? PROMO_THEMES[0];
@@ -90,12 +92,13 @@ const SAMPLES: Record<PromoId, Partial<Promo>> = {
   tolet: { title: "TO LET", titleHi: "किराये के लिए खाली", highlight: "₹12,000 / month", points: "2 BHK, first floor\nParking and 24-hour water\nFamily preferred", address: "14 Ashok Nagar, Prayagraj" },
   missing: { title: "MISSING", titleHi: "गुमशुदा की तलाश", highlight: "Reward ₹5,000", name: "Rahul Kumar, age 12", points: "Last seen near Civil Lines bus stand\nBlue shirt and black jeans\nHeight 4 ft 8 in", date: later(-2) },
   service: { org: "Gupta AC & Fridge Repair", title: "AC REPAIR & SERVICE", titleHi: "एसी रिपेयर व सर्विस", highlight: "Home visit ₹199", points: "All brands, split and window\nGas filling and installation\nSame-day service" },
+  business: { org: "BrightPath Digital", title: "SOCIAL MEDIA MARKETING", titleHi: "सोशल मीडिया मार्केटिंग", highlight: "GROW YOUR BUSINESS", points: "Posts, reels and ads that bring real customers to your shop. Free first consultation.", address: "www.example.com" },
   visiting: { org: "Verma Electricals", name: "Rohit Verma", highlight: "Proprietor", points: "rohit@example.com\nwww.example.com", address: "Shop 5, Katra Market, Prayagraj" },
   certificate: { org: "Saraswati Public School", title: "Certificate of Appreciation", titleHi: "प्रशंसा प्रमाण पत्र", name: "Priya Singh", highlight: "Principal, Class Teacher", points: "for securing first position in the inter-school quiz competition.", date: later(0), phone: "", address: "" },
 };
 export const promoSample = (k: PromoId): Promo => ({
   ...BASE, ...SAMPLES[k], kind: k, theme: PROMO_KINDS[k].defaultTheme,
-  size: PROMO_KINDS[k].shape === "card" ? "card" : PROMO_KINDS[k].shape === "cert" ? "cert" : "a4",
+  size: PROMO_KINDS[k].shape === "card" ? "card" : PROMO_KINDS[k].shape === "cert" ? "cert" : k === "business" ? "square" : "a4",
 });
 
 export interface PromoSize {
@@ -260,6 +263,7 @@ export function drawPromo(ctx: CanvasRenderingContext2D, p: Promo, photo: Pic | 
     ctx.save();
     if (shape === "card") visiting(ctx, p, photo);
     else if (shape === "cert") certificate(ctx, p, photo);
+    else if (p.kind === "business") business(ctx, p, photo, vertical);
     else poster(ctx, p, photo, vertical);
     ctx.restore();
   });
@@ -446,6 +450,126 @@ function poster(ctx: CanvasRenderingContext2D, p: Promo, photo: Pic | null, vert
       ctx.fillStyle = t.accent;
       const px = fitFont(ctx, dateLine, (n) => `700 ${n}px ${SANS}`, 40 * u, inner);
       y += px * 0.8; say(ctx, "date", dateLine, cx, y); y += px * 0.8;
+    }
+    return y;
+  }
+}
+
+/** Corporate social-media post: text on one side, the photo in a circle with accent shapes on the other. */
+function business(ctx: CanvasRenderingContext2D, p: Promo, photo: Pic | null, vertical: boolean) {
+  const [w, h] = promoSize(p, vertical), t = promoTheme(p.theme);
+  const hi = p.lang !== "en", en = p.lang !== "hi";
+  const S = Math.min(w, h), U = S / 1080;
+  const side = w / h >= 0.9; // text left, photo right; otherwise photo on top
+  ctx.clearRect(0, 0, w, h);
+  const g = ctx.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, t.bg[0]); g.addColorStop(1, t.bg[1]);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  // accent shapes
+  ctx.fillStyle = t.accent;
+  ctx.beginPath(); ctx.arc(w, 0, S * 0.2, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(side ? w : 0, side ? h : 0, S * 0.14, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = t.soft; ctx.globalAlpha = 0.35; ctx.lineWidth = 3 * U;
+  ctx.beginPath(); ctx.arc(w, 0, S * 0.27, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(side ? w : 0, side ? h : 0, S * 0.21, 0, Math.PI * 2); ctx.stroke();
+  ctx.globalAlpha = 1;
+
+  // photo (or a big icon when there is none)
+  const pcx = side ? w * 0.75 : w / 2, pcy = side ? h * 0.5 : h * 0.27;
+  const R = side ? Math.min(w * 0.2, h * 0.33) : Math.min(w * 0.3, h * 0.17);
+  ctx.fillStyle = t.soft; ctx.globalAlpha = 0.5;
+  for (let i = 0; i < 5; i++) for (let j = 0; j < 4; j++) { ctx.beginPath(); ctx.arc(pcx - R * 1.25 + i * R * 0.13, pcy - R * 1.05 + j * R * 0.13, 4 * U, 0, Math.PI * 2); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = t.accent; ctx.beginPath(); ctx.arc(pcx + R * 0.14, pcy + R * 0.1, R * 1.06, 0, Math.PI * 2); ctx.fill();
+  const b = place("photo", pcx - R, pcy - R, R * 2, R * 2);
+  if (!b.hidden) {
+    if (photo) photoRound(ctx, photo, b.x + b.w / 2, b.y + b.h / 2, b.w / 2, "#ffffff");
+    else {
+      ctx.fillStyle = t.bg[1]; ctx.beginPath(); ctx.arc(b.x + b.w / 2, b.y + b.h / 2, b.w / 2, 0, Math.PI * 2); ctx.fill();
+      art(ctx, "hiring", b.x + b.w / 2, b.y + b.h / 2, b.w * 0.55, t);
+    }
+  }
+  if (p.name) {
+    const nw = Math.min(R * 2.2, side ? w * 0.4 : w * 0.7);
+    ctx.font = `700 ${30 * U}px ${SANS}`;
+    const tw = Math.min(nw, ctx.measureText(p.name).width + 50 * U);
+    ctx.fillStyle = "#ffffff"; rr(ctx, pcx - tw / 2, pcy + R * 0.82, tw, 56 * U, 28 * U); ctx.fill();
+    ctx.fillStyle = t.bg[1]; ctx.textAlign = "center";
+    fitFont(ctx, p.name, (n) => `700 ${n}px ${SANS}`, 30 * U, tw - 30 * U);
+    say(ctx, "name", p.name, pcx, pcy + R * 0.82 + 38 * U);
+  }
+
+  // text column
+  const x0 = side ? w * 0.07 : w * 0.08;
+  const colW = side ? w * 0.5 - w * 0.07 : w * 0.84;
+  const top = side ? h * 0.1 : pcy + R + 70 * U;
+  const bottom = h - (side ? 70 : 60) * U - (p.qr ? 0 : 0);
+  const scratch = document.createElement("canvas").getContext("2d")!;
+  const end = quiet(() => text(scratch, 1, top));
+  let k = Math.max(0.45, Math.min(1.35, (bottom - top) / (end - top)));
+  let e2 = quiet(() => text(scratch, k, top));
+  for (let i = 0; i < 8 && e2 > bottom && k > 0.45; i++) { k *= 0.95; e2 = quiet(() => text(scratch, k, top)); }
+  text(ctx, k, top + Math.max(0, (bottom - e2) / 2));
+  if (p.qr) {
+    const qs = 150 * U;
+    const q = place("qr", w - qs - 40 * U, h - qs - 40 * U, qs, qs);
+    if (!q.hidden) drawQr(ctx, p.qr, q.x, q.y, q.w, t);
+  }
+
+  function text(ctx: CanvasRenderingContext2D, s: number, y: number): number {
+    const u = U * s;
+    ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+    if (p.org) {
+      const initials = p.org.split(/\s+/).filter((x) => /\p{L}/u.test(x)).slice(0, 2).map((x) => x[0]).join("").toUpperCase();
+      ctx.fillStyle = t.accent; rr(ctx, x0, y, 64 * u, 64 * u, 14 * u); ctx.fill();
+      ctx.fillStyle = on(t.accent); ctx.font = `800 ${30 * u}px ${SANS}`; ctx.textAlign = "center"; ctx.fillText(initials, x0 + 32 * u, y + 43 * u);
+      ctx.textAlign = "left"; ctx.fillStyle = t.ink;
+      fitFont(ctx, p.org, (n) => `700 ${n}px ${SANS}`, 34 * u, colW - 84 * u);
+      say(ctx, "org", p.org, x0 + 84 * u, y + 44 * u);
+      y += 120 * u;
+    }
+    if (p.highlight) {
+      ctx.font = `700 ${28 * u}px ${SANS}`;
+      const tw = Math.min(colW, ctx.measureText(p.highlight).width + 44 * u);
+      ctx.strokeStyle = t.accent; ctx.lineWidth = 3 * u; rr(ctx, x0, y, tw, 52 * u, 26 * u); ctx.stroke();
+      ctx.fillStyle = t.accent; fitFont(ctx, p.highlight, (n) => `700 ${n}px ${SANS}`, 28 * u, tw - 44 * u);
+      say(ctx, "highlight", p.highlight, x0 + 22 * u, y + 36 * u);
+      y += 90 * u;
+    }
+    const main = hi && !en ? p.titleHi || p.title : p.title || p.titleHi;
+    if (main) {
+      let px = 118 * u, lines: string[] = [];
+      for (;;) {
+        ctx.font = `900 ${px}px ${SANS}`;
+        lines = wrap(ctx, main, colW);
+        if ((lines.length <= 3 && lines.every((l) => ctx.measureText(l).width <= colW)) || px < 30 * u) break;
+        px *= 0.92;
+      }
+      lines.forEach((l, i) => { ctx.fillStyle = i === lines.length - 1 && lines.length > 1 ? t.accent : t.ink; y += px * 0.95; say(ctx, `title.${i}`, l, x0, y); });
+      y += 30 * u;
+    }
+    if (hi && en && p.titleHi && p.titleHi !== main) {
+      ctx.fillStyle = t.soft; const px = fitFont(ctx, p.titleHi, (n) => `700 ${n}px ${SANS}`, 48 * u, colW);
+      y += px; say(ctx, "title.hi", p.titleHi, x0, y); y += 26 * u;
+    }
+    const desc = p.points.split("\n").map((x) => x.trim()).filter(Boolean).join(" ");
+    if (desc) {
+      ctx.fillStyle = t.ink; ctx.globalAlpha = 0.85; ctx.font = `400 ${32 * u}px ${SANS}`;
+      wrap(ctx, desc, colW).slice(0, 5).forEach((l, i) => { y += 44 * u; say(ctx, `text.${i}`, l, x0, y); });
+      ctx.globalAlpha = 1; y += 40 * u;
+    }
+    if (p.phone) {
+      const label = `☎ ${p.phone}`;
+      ctx.font = `800 ${34 * u}px ${SANS}`;
+      const tw = Math.min(colW, ctx.measureText(label).width + 70 * u);
+      ctx.fillStyle = t.accent; rr(ctx, x0, y, tw, 76 * u, 38 * u); ctx.fill();
+      ctx.fillStyle = on(t.accent); fitFont(ctx, label, (n) => `800 ${n}px ${SANS}`, 34 * u, tw - 60 * u);
+      say(ctx, "phone", label, x0 + 35 * u, y + 50 * u);
+      y += 106 * u;
+    }
+    if (p.address) {
+      ctx.fillStyle = t.soft; fitFont(ctx, p.address, (n) => `600 ${n}px ${SANS}`, 28 * u, colW);
+      y += 30 * u; say(ctx, "addr", p.address, x0, y);
     }
     return y;
   }

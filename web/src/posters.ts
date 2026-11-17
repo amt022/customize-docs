@@ -67,6 +67,7 @@ export interface Greeting {
   from: string;     // "Sharma family"
   message: string;  // empty = the festival's own message
   lang: Lang;
+  wide?: boolean; // 16:9 banner instead of the square post
 }
 
 interface Festival { en: string; hi: string; msgEn: string; msgHi: string; theme: Theme; petals: string[] }
@@ -273,17 +274,19 @@ function festivalArt(ctx: CanvasRenderingContext2D, f: FestivalId, cx: number, c
   ctx.restore();
 }
 
-export function greetingSize(vertical: boolean): [number, number] { return vertical ? [1080, 1920] : [1080, 1080]; }
+export function greetingSize(vertical: boolean, wide = false): [number, number] { return vertical ? [1080, 1920] : wide ? [1920, 1080] : [1080, 1080]; }
 
 export function drawGreeting(ctx: CanvasRenderingContext2D, g: Greeting, photo: Pic | null, vertical: boolean, ov?: Overrides): Item[] {
   return edited(ov, () => {
-    const [w, h] = greetingSize(vertical);
+    const wide = !!g.wide && !vertical;
+    const [w, h] = greetingSize(vertical, wide);
     const f = FESTIVALS[g.festival], t = f.theme;
     const hi = g.lang !== "en", en = g.lang !== "hi";
     ctx.save();
     ctx.clearRect(0, 0, w, h);
-    background(ctx, w, h, t);
+    background(ctx, w, h, t, wide ? "simple" : "ornate");
     ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    if (wide) { banner(); ctx.restore(); return; }
     const cx = w / 2, u = w / 1080, inner = w * 0.74;
     const V = vertical ? 1.25 : 1; // the tall size gets bigger art and type
     const fromY = h - h * (vertical ? 0.075 : 0.09);
@@ -327,6 +330,58 @@ export function drawGreeting(ctx: CanvasRenderingContext2D, g: Greeting, photo: 
         y += 10 * u;
       }
       return y - y0;
+    }
+
+    /** 16:9 banner: big festival art on the left, greeting text centred on the right. */
+    function banner() {
+      const u = h / 1080, cx = w * 0.7, inner = w * 0.5;
+      const glowR = h * 0.55;
+      const gl = ctx.createRadialGradient(w * 0.24, h / 2, 0, w * 0.24, h / 2, glowR);
+      gl.addColorStop(0, t.soft + "55"); gl.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = gl; ctx.fillRect(0, 0, w * 0.6, h);
+      festivalArt(ctx, g.festival, w * 0.24, h * 0.47, Math.min(h * 0.5, w * 0.2), t);
+      const lines = (paint: boolean, k: number) => {
+        let y = 0;
+        const step = (n: number) => { y += n * k * u; };
+        const c = paint ? ctx : document.createElement("canvas").getContext("2d")!;
+        c.textAlign = "center";
+        const at = (id: string, text: string) => { if (paint) say(c, id, text, cx, top + y); };
+        if (hi) { c.fillStyle = t.accent; fit(c, f.hi, (px) => `700 ${px}px ${SERIF}`, 130 * k * u, inner); step(110); at("title.hi", f.hi); step(30); }
+        if (en) {
+          c.fillStyle = hi ? t.soft : t.accent;
+          const px = fit(c, f.en, (n) => `${n}px ${SCRIPT}`, (hi ? 100 : 170) * k * u, inner);
+          step(px / u / k * 0.8); at("title.en", f.en); step(30);
+        }
+        if (paint) divider(c, cx, top + y + 10 * k * u, inner * 0.5, t);
+        step(80);
+        c.fillStyle = t.ink;
+        const msgs = g.message ? [g.message] : [hi ? f.msgHi : "", en ? f.msgEn : ""].filter(Boolean);
+        let n = 0;
+        for (const m of msgs) {
+          c.font = `${/[ऀ-ॿ]/.test(m) ? "" : "italic "}400 ${40 * k * u}px ${SERIF}`;
+          for (const l of wrap(c, m, inner)) { at(`msg.${n++}`, l); step(54); }
+          step(10);
+        }
+        if (g.from) {
+          step(30);
+          c.fillStyle = t.accent;
+          const line = `${en ? "Warm wishes from" : "शुभकामनाओं सहित,"} ${g.from}`;
+          fit(c, line, (px) => `600 ${px}px ${SERIF}`, 42 * k * u, inner);
+          at("from", line); step(20);
+        }
+        return y;
+      };
+      const avail = h * 0.8;
+      let top = 0;
+      const tall = quiet(() => lines(false, 1));
+      const k = Math.min(1.45, avail / tall);
+      top = (h - lines(false, k)) / 2 + 20 * u;
+      if (photo) {
+        const r = h * 0.11;
+        const b = place("photo", w * 0.24 - r, h * 0.74, r * 2, r * 2);
+        if (!b.hidden) photoCircle(ctx, photo, b.x + b.w / 2, b.y + b.h / 2, b.w / 2, t);
+      }
+      lines(true, k);
     }
   });
 }
