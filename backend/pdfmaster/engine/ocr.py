@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 TESSDATA_URL = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/{lang}.traineddata"
 DEFAULT_LANGS = "eng+hin"
 LAYER_TAG = "/PMOCR"
-OCR_VERSION = 3  # bump when recognition improves so older results are offered again
+OCR_VERSION = 4  # bump when recognition improves so older results are offered again
 
 
 class OcrUnavailable(Exception):
@@ -155,7 +155,116 @@ def run_tesseract(data: bytes, index: int, data_root: Path, langs: str = DEFAULT
             "bbox": [round(min(ax, bx), 2), round(min(ay, by), 2), round(max(ax, bx), 2), round(max(ay, by), 2)],
             "color": color,
         })
+    try:  # big display lettering (cursive names on a card) that Tesseract's page analysis skips entirely
+        for k, (text, conf, (l, t, w, h)) in enumerate(_missed_blocks(arr, [b for _r, _t, _c, b, _p in found], exe, tessdata)):
+            (ax, ay), (bx, by) = geo.to_pdf(l, t), geo.to_pdf(l + w, t + h)
+            patch = arr[t:t + h, l:l + w].reshape(-1, 3)
+            g = patch.mean(axis=1)
+            dark = patch[g <= np.percentile(g, 15)]
+            color = "#%02x%02x%02x" % tuple(int(v) for v in np.median(dark, axis=0)) if len(dark) else "#000000"
+            words.append({"text": text, "conf": conf, "line": len(lines) + k,
+                          "bbox": [round(min(ax, bx), 2), round(min(ay, by), 2), round(max(ax, bx), 2), round(max(ay, by), 2)],
+                          "color": color, "auto": True})
+    except Exception:  # an extra, never a reason to lose the normal result
+        log.exception("missed-text search failed")
     return {"v": OCR_VERSION, "langs": langs, "dpi": dpi, "words": words}
+
+
+COLOUR_SAME = 0.6  # share of a blob's ink that must be the same colour
+
+
+def _missed_blocks(arr: np.ndarray, boxes: list, exe: str, tessdata) -> list:
+    """Display-size text no OCR box covers: dark-on-light blobs (against the local background) that are wide and
+    bigger than the page's words, e.g. the names on a wedding card. Returns [(guess, conf, (l, t, w, h))] in pixels
+    of `arr`. The text is read from a close crop (single-word mode), or a stand-in when it can't be read."""
+    from collections import deque
+
+    from PIL import Image, ImageFilter, ImageOps
+
+    if len(boxes) < 3:  # a page with no words around is a photo or drawing, not a card
+        return []
+    small = arr[::2, ::2].astype(np.float32)
+    H, W = small.shape[:2]
+    gray = small.mean(axis=2)
+    g8 = Image.fromarray(gray.astype(np.uint8))
+    bg = np.asarray(g8.resize((max(W // 8, 1), max(H // 8, 1)), Image.BILINEAR).filter(ImageFilter.MedianFilter(7)).resize((W, H), Image.BILINEAR), np.float32)
+    mask = (bg - gray) > 45
+    for l, t, w, h in boxes:  # what the OCR already has
+        mask[max(t // 2 - 3, 0):(t + h) // 2 + 3, max(l // 2 - 3, 0):(l + w) // 2 + 3] = False
+    med = float(np.median([b[3] for b in boxes])) / 2
+    k = 8
+    sh, sw = H // k, W // k
+    cells = mask[: sh * k, : sw * k].reshape(sh, k, sw, k).any(axis=(1, 3))
+    lab = np.zeros((sh, sw), np.int32)
+    out = []
+    for y in range(sh):
+        for x in range(sw):
+            if not cells[y, x] or lab[y, x]:
+                continue
+            n = len(out) + 1
+            lab[y, x] = n
+            q, ys, xs = deque([(y, x)]), [y], [x]
+            while q:
+                cy, cx = q.popleft()
+                for dy in range(-2, 3):
+                    for dx in range(-3, 4):
+                        ny, nx = cy + dy, cx + dx
+                        if 0 <= ny < sh and 0 <= nx < sw and cells[ny, nx] and not lab[ny, nx]:
+                            lab[ny, nx] = n
+                            q.append((ny, nx))
+                            ys.append(ny)
+                            xs.append(nx)
+            out.append((min(xs) * k, min(ys) * k, (max(xs) + 1) * k, (max(ys) + 1) * k, len(ys)))
+    found = []
+    for x0, y0, x1, y1, n in out:
+        w, h = x1 - x0, y1 - y0
+        ink = mask[y0:y1, x0:x1]
+        if x0 < 0.08 * W or x1 > 0.92 * W:  # borders, garlands and corner art are not where names are set
+            continue
+        if not (1.6 * med <= h <= 12 * med and w >= 4 * med and 1.4 <= w / max(h, 1) <= 8 and ink.mean() >= 0.08 and n >= 12):
+            continue
+        # lettering is one colour on its background; garlands, photos and patterns are many
+        ring = np.zeros_like(mask)
+        ring[max(y0 - 6, 0):y1 + 6, max(x0 - 6, 0):x1 + 6] = True
+        ring[y0:y1, x0:x1] = False
+        paper = np.median(small[ring & ~mask], axis=0) if (ring & ~mask).any() else np.median(small.reshape(-1, 3), axis=0)
+        pix = small[y0:y1, x0:x1][ink] - paper
+        pix = pix[np.linalg.norm(pix, axis=1) > 40]
+        if len(pix) < 12:
+            continue
+        dirs = pix / np.linalg.norm(pix, axis=1, keepdims=True)
+        mean = dirs.mean(axis=0)
+        mean /= max(float(np.linalg.norm(mean)), 1e-6)
+        if float(np.mean(dirs @ mean >= 0.9)) < COLOUR_SAME:
+            continue
+        rows, cols = np.flatnonzero(ink.any(axis=1)), np.flatnonzero(ink.any(axis=0))
+        found.append((int(ink.sum()), (x0 + int(cols[0])) * 2 - 2, (y0 + int(rows[0])) * 2 - 2,
+                      (int(cols[-1]) - int(cols[0]) + 1) * 2 + 4, (int(rows[-1]) - int(rows[0]) + 1) * 2 + 4))
+    res = []
+    for _ink, l, t, w, h in sorted(found, reverse=True)[:4]:
+        l, t = max(l, 0), max(t, 0)
+        w, h = min(w, arr.shape[1] - l), min(h, arr.shape[0] - t)
+        text, conf = "Name", 0.0
+        try:
+            crop = arr[max(t - 20, 0):t + h + 20, max(l - 20, 0):l + w + 20]
+            im = ImageOps.autocontrast(Image.fromarray(crop).convert("L"), cutoff=1)
+            if im.height > 200:
+                im = im.resize((max(im.width // 2, 1), max(im.height // 2, 1)))
+            with tempfile.TemporaryDirectory() as td:
+                f = Path(td) / "w.png"
+                im.save(f)
+                env = dict(os.environ, TESSDATA_PREFIX=str(tessdata))
+                proc = subprocess.run([exe, str(f), "stdout", "-l", "eng", "--psm", "8", "--dpi", "300", "tsv"],
+                                      capture_output=True, env=env, timeout=60)
+            for row in csv.DictReader(io.StringIO(proc.stdout.decode("utf-8", "replace")), delimiter="\t", quoting=csv.QUOTE_NONE):
+                guess = (row.get("text") or "").strip()
+                if row.get("level") == "5" and sum(c.isalpha() for c in guess) >= 3 and sum(c.isalpha() for c in guess) >= 0.7 * len(guess):
+                    text, conf = guess, max(float(row.get("conf") or 0), 0.0)
+                    break
+        except Exception:
+            pass
+        res.append((text, min(conf, 40.0), (l, t, w, h)))
+    return res
 
 
 def _bands(profile: np.ndarray, min_gap: int) -> list[tuple[int, int]]:

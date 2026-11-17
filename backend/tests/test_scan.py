@@ -421,3 +421,32 @@ def test_mark_word_endpoint(scanned_doc):
     assert len(out["glyphs"]) == len(m["glyphs"]) + 1 and out["glyphs"][-1]["c"] == "25,000"
     r = client.post(f"/api/v1/documents/{did}/pages/1/ocr/words", json={"bbox": [1, 1, 30, 12], "text": "x"})
     assert r.status_code == 422 and "No text found" in r.json()["message"]
+
+
+def test_display_name_the_ocr_never_saw_is_found_without_marking_it(tmp_path):
+    """"Manshi" on the card: Tesseract's page analysis skipped it completely, so it could not be clicked.
+    Large lettering that no OCR box covers is now found on its own (and a stand-in text is used if unreadable)."""
+    from pdfmaster.engine import ocr as ocr_engine, scanedit
+
+    data, ocr = _card(_CARD)
+    i = next(i for i, w in enumerate(ocr["words"]) if w["text"] == "CBikash")
+    true = ocr["words"].pop(i)["bbox"]
+    H = 520
+    z = 300 / 72
+    arr = render_array(data, 0, z)
+    boxes = [(int(w["bbox"][0] * z), int((H - w["bbox"][3]) * z), int((w["bbox"][2] - w["bbox"][0]) * z),
+              int((w["bbox"][3] - w["bbox"][1]) * z)) for w in ocr["words"]]
+    found = ocr_engine._missed_blocks(arr, boxes, "no-such-tesseract", tmp_path)
+    assert len(found) == 1, found
+    text, _conf, (l, t, w, h) = found[0]
+    assert text == "Name"  # unreadable here: a stand-in
+    assert abs(l / z - true[0]) < 12 and abs(l / z + w / z - true[2]) < 12, (l / z, true)
+    # editing it: the new text sets the size, in a script face, centred
+    word = {"text": text, "conf": 0.0, "line": 9, "color": "#465042", "auto": True,
+            "bbox": [l / z, H - (t + h) / z, (l + w) / z, H - t / z]}
+    cur = {**ocr, "words": ocr["words"] + [word]}
+    res = scanedit.edit_scan(data, 0, cur, [len(cur["words"]) - 1], "Ashish")
+    assert any(n in res.report["font"] for n in scanedit._SCRIPT), res.report["font"]
+    nb = res.ocr["words"][-1]["bbox"]
+    assert 0.5 * (true[3] - true[1]) < nb[3] - nb[1] < 1.4 * (true[3] - true[1]), (nb, true)
+    assert abs((nb[0] + nb[2]) / 2 - (true[0] + true[2]) / 2) < 15

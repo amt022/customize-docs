@@ -477,7 +477,7 @@ def _stroke(tight: np.ndarray) -> float:
     return float(tight.sum()) / runs / max(body[1] - body[0], 1) if body else 0.0
 
 
-def pick_script(mask: np.ndarray, old_text: str, new_text: str) -> Optional[SysFont]:
+def pick_script(mask: np.ndarray, old_text: str, new_text: str, by_shape: bool = True) -> Optional[SysFont]:
     """The script typeface closest to a cursive word: same lean and stroke thickness first (they do not depend on
     reading the word right, and OCR rarely reads joined-up letters right), then the letter shapes."""
     tight = _tight(mask)
@@ -485,7 +485,7 @@ def pick_script(mask: np.ndarray, old_text: str, new_text: str) -> Optional[SysF
         return None
     want = [c for c in new_text if not c.isspace()]
     slant, stroke = _slant(tight), _stroke(tight)
-    ranks = rank_fonts([(mask, old_text)], False, _SCRIPT)
+    ranks = rank_fonts([(mask, old_text)], False, _SCRIPT) if by_shape else {}
     best = None
     for i, name in enumerate(_SCRIPT):
         f, q = _style(name, False, False)
@@ -793,7 +793,7 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
                 if seen is not None and _norm(seen.family) in scripts and all(has_glyph(seen, ch) for ch in want):
                     font = seen
         if font is None:
-            font = pick_script(word_mask, old_text, new_text or old_text)
+            font = pick_script(word_mask, old_text, new_text or old_text, not any(w.get('auto') for w in sel))
     if font is None and family == "auto" and not cursive and wc is not None:
         refs = [(word_mask, old_text, 3.0)]
         by_line: dict[int, list[dict]] = {}
@@ -896,30 +896,50 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
         if len(cols):
             ink_l, ink_r = int(max(oc0, 0)) + int(cols[0]), int(max(oc0, 0)) + int(cols[-1]) + 1
 
+    # text found by the layout search was only guessed from a smudge of script: its letters say nothing about
+    # size, so the new text's own letter body is fitted to the old ink's body instead
+    guessed = any(w.get("auto") for w in sel) and bool(new_text.strip())
+
     def fit_to_scan(f: SysFont) -> Optional[tuple]:
         """Render the old word in typeface f at the scan's own scale and measure it exactly like the scan's word:
         same body height (size), width (hx), baseline and amount of ink (stroke weight)."""
-        pf = f if all(has_glyph(f, c) for c in old_text if not c.isspace()) else probe_font
+        fit_text = new_text if guessed else old_text
+        pf = f if all(has_glyph(f, c) for c in fit_text if not c.isspace()) else probe_font
         kk = k
+        if guessed:  # no letters to compare: the whole ink block of the new text takes the old block's height and middle
+            gr = np.flatnonzero(word_mask.any(axis=1))
+            guess_h = 0.92 * float(gr[-1] - gr[0] + 1)  # the whole old lettering, flourishes included, a little eased
+            for _ in range(3):
+                pr = rasterize(fit_text, pf, 100.0 * kk, sc)
+                ih = pr.ink[2] - pr.ink[0]
+                if ih < 2:
+                    return None
+                kk *= guess_h / ih
+            pr = rasterize(fit_text, pf, 100.0 * kk, sc)
+            rows_ = np.flatnonzero(word_mask.any(axis=1))
+            extra = int(np.ceil(wc.shape[1] * abs(tilt))) + 1
+            cy0, cx0 = int(max(or0, 0)), int(max(oc0, 0))
+            centre = cy0 + (rows_[0] + rows_[-1] + 1) / 2 - extra - (xc - cx0) * tilt
+            return kk, 1.0, centre + pr.baseline - (pr.ink[0] + pr.ink[2]) / 2, 0.0
         for _ in range(3):
-            pr = rasterize(old_text, pf, 100.0 * kk, sc)
+            pr = rasterize(fit_text, pf, 100.0 * kk, sc)
             pb = _body(_scan_like(_finish_alpha(pr.alpha, 1.0, kk)))
             if not pb or pb[1] - pb[0] < 2:
                 return None
             kk *= (body_s[1] - body_s[0]) / (pb[1] - pb[0])
-        pr = rasterize(old_text, pf, 100.0 * kk, sc)
+        pr = rasterize(fit_text, pf, 100.0 * kk, sc)
         pm = _scan_like(_finish_alpha(pr.alpha, 1.0, kk))
         pb, cols = _body(pm), np.nonzero(pm.any(axis=0))[0]
         if not pb or not len(cols):
             return None
-        hh = float(np.clip(tight.shape[1] / (cols[-1] - cols[0] + 1), 0.75, 1.3))
+        hh = 1.0 if guessed else float(np.clip(tight.shape[1] / (cols[-1] - cols[0] + 1), 0.75, 1.3))
         # unshear() moved column j down by extra + j*tilt rows; undo that at the word's middle
         extra = int(np.ceil(wc.shape[1] * abs(tilt))) + 1
         cy0, cx0 = int(max(or0, 0)), int(max(oc0, 0))
         base = cy0 + body_s[1] + (pr.baseline - pb[1]) - extra - (xc - cx0) * tilt
         alh = _finish_alpha(pr.alpha, hh, kk)
         have, want = float(_scan_like(alh).sum()), float(word_mask.sum())
-        wgt = _fit_weight(alh, want) if have > 0 and 0.5 < want / have < 3.0 else 0.0  # (thin titling faces: up to the full pixel)
+        wgt = 0.0 if guessed else _fit_weight(alh, want) if have > 0 and 0.5 < want / have < 3.0 else 0.0  # (thin titling faces: up to the full pixel)
         return kk, hh, base, wgt
 
     if body_s and body_s[1] - body_s[0] >= 4:
