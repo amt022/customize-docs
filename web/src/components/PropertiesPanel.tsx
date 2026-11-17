@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { api } from "../api";
 import type { AnnotationInfo } from "../api";
 import type { Anchor, DocumentInfo, EditResponse, Fit, PageModel, ScanStyle, Selection } from "../types";
 import { glyphsFor, unionBox } from "../pdf";
@@ -38,6 +40,10 @@ const ANNOT_LABEL: Record<string, string> = {
 export default function PropertiesPanel({ doc, model, selection, anchor, fit, lastResult, onAnchor, onFit, onEdit, onSelectLine, onDelete, onReplaceAll,
   annotations, onMarkup, onDeleteAnnotation, scanStyle, onScanStyle }: Props) {
   const scanned = model?.source === "ocr";
+  const [fonts, setFonts] = useState<string[]>([]);
+  useEffect(() => {
+    if (scanned && !fonts.length) api.scanFonts().then(setFonts).catch(() => undefined);
+  }, [scanned, fonts.length]);
   const line = model && selection ? model.lines[selection.line] : null;
   const ids = line && selection ? glyphsFor(line, selection.start, selection.end) : [];
   const g = ids.length && model ? model.glyphs[ids[0]] : null;
@@ -85,7 +91,7 @@ export default function PropertiesPanel({ doc, model, selection, anchor, fit, la
       {scanned && (
         <section>
           <h3>Scanned text style</h3>
-          <p className="help">New words are drawn into the scan. Auto match picks the closest typeface from your scan; size, tilt, ink colour and baseline are matched too.</p>
+          <p className="help">New words are drawn into the scan. Auto match picks the closest typeface from your scan; size, tilt, ink colour and baseline are matched too. Font and Colour copy the original text unless you choose otherwise.</p>
           <div className="segmented">
             {(["auto", "sans", "serif", "mono", "script"] as const).map((f) => (
               <button key={f} className={scanStyle.family === f ? "on" : ""} onClick={() => onScanStyle({ ...scanStyle, family: f })}>
@@ -94,6 +100,18 @@ export default function PropertiesPanel({ doc, model, selection, anchor, fit, la
             ))}
           </div>
           <label className="check-row"><input type="checkbox" checked={scanStyle.bold} onChange={(e) => onScanStyle({ ...scanStyle, bold: e.target.checked })} /> Bold</label>
+          <label className="field-label">Font</label>
+          <select value={scanStyle.fontName} onChange={(e) => onScanStyle({ ...scanStyle, fontName: e.target.value })}>
+            <option value="">Same as original text</option>
+            {fonts.map((f) => <option key={f} value={f} style={{ fontFamily: `"${f}"` }}>{f}</option>)}
+          </select>
+          <label className="field-label">Colour</label>
+          <div className="row gap">
+            <input type="color" aria-label="Text colour" value={scanStyle.color || "#000000"}
+              onChange={(e) => onScanStyle({ ...scanStyle, color: e.target.value })} />
+            <span className="muted small">{scanStyle.color ? scanStyle.color : "Same as original text"}</span>
+            {scanStyle.color && <button className="btn small" onClick={() => onScanStyle({ ...scanStyle, color: "" })}>Use original</button>}
+          </div>
         </section>
       )}
 

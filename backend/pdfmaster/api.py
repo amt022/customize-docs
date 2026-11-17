@@ -266,6 +266,20 @@ def session_info(request: Request):
     return ok(_session(getattr(request.state, "user", None)))
 
 
+_FONT_CHOICES = ["Arial", "Times New Roman", "Courier New", "Calibri", "Cambria", "Georgia", "Verdana", "Tahoma",
+                 "Trebuchet MS", "Segoe UI", "Comic Sans MS", "Impact", "Liberation Sans", "Liberation Serif",
+                 "Liberation Mono", "Carlito", "Caladea", "DejaVu Sans", "DejaVu Serif",
+                 "Great Vibes", "Pinyon Script", "Alex Brush", "Allura", "Cinzel", "Cormorant SC"]
+
+
+@app.get(f"{API}/scan-fonts")
+def scan_fonts():
+    """Typefaces the 'Scanned text style' panel offers for new text (only those installed here)."""
+    from .engine.sysfonts import _norm, font_index
+    have = {_norm(f.family): f.family for f in font_index()}
+    return ok([have[_norm(n)] for n in _FONT_CHOICES if _norm(n) in have])
+
+
 def _session(user: Optional[dict]) -> dict:
     return {"multiUser": MULTIUSER, "retentionHours": RETENTION_HOURS or None,
             "accountRetentionDays": ACCOUNT_RETENTION_DAYS or None, "maxUploadMb": MAX_UPLOAD // (1024 * 1024),

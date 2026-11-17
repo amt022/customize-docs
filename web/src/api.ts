@@ -72,6 +72,7 @@ export interface LegalInfo {
 export const api = {
   // accounts (hosted website only)
   session: () => call<SessionInfo>("/session"),
+  scanFonts: () => call<string[]>("/scan-fonts"),
   sendCode: (login: string) => call<{ sentTo: string; kind: "email" | "phone"; resendSeconds: number; expiresMinutes: number }>("/auth/code", json({ login })),
   verifyCode: (login: string, code: string) => call<SessionInfo & { movedDocuments: number }>("/auth/verify", json({ login, code, acceptTerms: true })),
   logout: () => call<SessionInfo>("/auth/logout", { method: "POST" }),
@@ -105,7 +106,7 @@ export const api = {
     call<PageModel>(`/documents/${id}/pages/${page}/text${version !== undefined ? `?version=${version}` : ""}`),
   replace: (
     id: string,
-    body: { page: number; baseVersion: number; dryRun: boolean; edits: { glyphs: number[]; text: string; anchor: Anchor; fit: Fit; style?: { family: string; bold: boolean } }[] },
+    body: { page: number; baseVersion: number; dryRun: boolean; edits: { glyphs: number[]; text: string; anchor: Anchor; fit: Fit; style?: { family: string; bold: boolean; fontName?: string; color?: string } }[] },
     signal?: AbortSignal,
   ) => call<EditResponse>(`/documents/${id}/edit/replace-text`, { ...json(body), signal }),
   find: (id: string, query: string, matchCase: boolean, wholeWord: boolean) =>

@@ -656,7 +656,14 @@ class ScanEditResult:
 
 
 def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: str,
-              anchor: str = "auto", family: str = "auto", bold: bool = False, italic: bool = False) -> ScanEditResult:
+              anchor: str = "auto", family: str = "auto", bold: bool = False, italic: bool = False,
+              font_name: str = "", color: str = "") -> ScanEditResult:
+    """`font_name` (an installed family) and `color` ("#rrggbb") override the automatic match of the original
+    lettering; left empty, the new text copies the old text's typeface and ink colour."""
+    import re as _re
+    chosen_color = color.strip().lower() if color else ""
+    if chosen_color and not _re.fullmatch(r"#[0-9a-f]{6}", chosen_color):
+        raise EditError("Colour must look like #rrggbb")
     words = ocr["words"]
     try:
         sel = [words[i] for i in sorted(set(word_ids))]
@@ -783,6 +790,15 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
         if font is not None and not all(has_glyph(font, c) for c in (new_text or old_text) if not c.isspace()):
             font = None
         reused = font is not None
+    if font_name:  # the user picked a typeface: use it as it is, no automatic matching
+        from .sysfonts import _norm, _pick, font_index
+        cands = [g for g in font_index() if _norm(g.family) == _norm(font_name)]
+        chosen = _pick(cands, bold, italic) if cands else None
+        if chosen is None:
+            raise EditError(f"Font '{font_name}' is not installed")
+        if not all(has_glyph(chosen, c) for c in (new_text or old_text) if not c.isspace()):
+            raise EditError(f"Font '{font_name}' has no glyphs for this text; pick another font")
+        font, reused = chosen, True
     if font is None and cursive and wc is not None:
         # joined-up lettering is matched among script typefaces only (its OCR text is rarely exact, so the
         # shapes say little more than "which script"); a plain typeface never stands in for it
@@ -1182,7 +1198,11 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
             arr[y0:y1, x0:x1] = arr[y0:y1, x0:x1] * (1 - wgt) + blk_pix[y0 - sy:y1 - sy, x0 - sx:x1 - sx] * wgt
 
     # draw the new text
-    color = draw_rgb or _hex_rgb(sel[0].get("color", "#000000"))
+    color = _hex_rgb(chosen_color) if chosen_color else draw_rgb or _hex_rgb(sel[0].get("color", "#000000"))
+    if arr.ndim == 2 and len(set(color)) > 1 and chosen_color:
+        # a grey scan can still carry coloured new text: the patch image is then RGB
+        arr = np.repeat(arr[..., None], 3, axis=2)
+        region = region.convert("RGB")
     if new_raster is not None:
         al = np.clip(_reweight(_finish_alpha(new_raster.alpha, hx, k), weight), 0, 1)
         if depth is not None and (al > 0.3).sum() >= 12:
@@ -1300,7 +1320,7 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
                      for w in new_words]
     if new_rect is not None:
         (x0, y1_), (x1, y0_) = to_pdf(new_rect[0], new_rect[1]), to_pdf(new_rect[2], new_rect[3])
-        new_words.append({"text": new_text, "conf": 100.0, "line": sel[0]["line"], "color": sel[0].get("color", "#000000"),
+        new_words.append({"text": new_text, "conf": 100.0, "line": sel[0]["line"], "color": chosen_color or sel[0].get("color", "#000000"),
                           "bbox": [round(min(x0, x1), 2), round(min(y0_, y1_), 2), round(max(x0, x1), 2), round(max(y0_, y1_), 2)],
                           "edited": True, "font": [font.path, font.index],
                           "wgt": round(float(weight), 3), **({"sc": round(float(sc), 3)} if sc else {}), **({"cursive": True} if cursive else {})})

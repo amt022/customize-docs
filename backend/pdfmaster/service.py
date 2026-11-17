@@ -530,7 +530,8 @@ class DocumentService:
         for e in sorted(edits, key=lambda e: -min(e.glyphs)):
             st = e.style or {}
             res = edit_scan(cur, page - 1, cur_ocr, e.glyphs, e.text, e.anchor,
-                            st.get("family", "auto"), bool(st.get("bold")), bool(st.get("italic")))
+                            st.get("family", "auto"), bool(st.get("bold")), bool(st.get("italic")),
+                            str(st.get("fontName") or ""), str(st.get("color") or ""))
             cur, cur_ocr = res.data, res.ocr
             reports.append(res.report)
         return cur, cur_ocr, reports

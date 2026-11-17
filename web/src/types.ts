@@ -99,6 +99,10 @@ export interface Placement {
 export interface ScanStyle {
   family: "auto" | "sans" | "serif" | "mono" | "script";
   bold: boolean;
+  /** installed typeface chosen by the user; "" = match the original lettering */
+  fontName: string;
+  /** "#rrggbb" chosen by the user; "" = copy the original ink colour */
+  color: string;
 }
 
 export type Anchor = "auto" | "left" | "right" | "center";

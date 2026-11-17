@@ -47,7 +47,7 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
   const [editing, setEditing] = useState(false);
   const [anchor, setAnchor] = useState<Anchor>("auto");
   const [fit, setFit] = useState<Fit>("auto");
-  const [scanStyle, setScanStyle] = useState<ScanStyle>({ family: "auto", bold: false });
+  const [scanStyle, setScanStyle] = useState<ScanStyle>({ family: "auto", bold: false, fontName: "", color: "" });
   const [preview, setPreview] = useState<EditResponse | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -148,7 +148,7 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
   const selectedIds = model && selection ? glyphsFor(model.lines[selection.line], selection.start, selection.end) : [];
   const selectedText = model && selection ? model.lines[selection.line].text.slice(selection.start, selection.end) : "";
   const isScan = model?.source === "ocr";
-  const style = isScan ? { family: scanStyle.family, bold: scanStyle.bold } : undefined;
+  const style = isScan ? { family: scanStyle.family, bold: scanStyle.bold, fontName: scanStyle.fontName, color: scanStyle.color } : undefined;
 
   /** Runs a version-creating action, then reloads document + page. */
   const act = async (fn: (v: number) => Promise<unknown>, ok?: string) => {

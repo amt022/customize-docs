@@ -127,6 +127,36 @@ def test_edit_scanned_word_patches_only_that_area(scanned_doc):
     assert any("35,000" in l["text"] for l in m2["lines"])
 
 
+def test_edited_text_can_be_given_another_font_and_colour(scanned_doc):
+    client, service, did = scanned_doc
+    m = client.get(f"/api/v1/documents/{did}/pages/1/text").json()["data"]
+    ids = word_ids(m, "25,000")
+    url = f"/api/v1/documents/{did}/edit/replace-text"
+    fonts = client.get("/api/v1/scan-fonts").json()["data"]
+    assert fonts, "no installed font offered"
+
+    def red_pixels():
+        px = render_array(service.data(did), 0, 1.0).astype(int)
+        return int(((px[..., 0] - px[..., 1:].max(axis=-1)) > 100).sum())
+
+    before = service.data(did)  # default: ink colour copied from the scan (black text)
+    r = client.post(url, json={"page": 1, "edits": [{"glyphs": ids, "text": "35,000"}]}).json()
+    assert r["success"], r
+    assert red_pixels() == 0
+
+    m = client.get(f"/api/v1/documents/{did}/pages/1/text").json()["data"]
+    before = service.data(did)  # chosen colour and font
+    r = client.post(url, json={"page": 1, "edits": [{"glyphs": word_ids(m, "35,000"), "text": "45,000",
+                                                     "style": {"family": "auto", "bold": False, "fontName": fonts[0], "color": "#ff0000"}}]}).json()
+    assert r["success"], r
+    assert red_pixels() > 20
+
+    m = client.get(f"/api/v1/documents/{did}/pages/1/text").json()["data"]
+    bad = client.post(url, json={"page": 1, "edits": [{"glyphs": word_ids(m, "45,000"), "text": "1",
+                                                       "style": {"color": "red"}}]}).json()
+    assert not bad["success"]
+
+
 def test_repeated_edit_of_same_word_leaves_no_remnant(scanned_doc):
     client, service, did = scanned_doc
     for new in ("1,25,000", "9"):
