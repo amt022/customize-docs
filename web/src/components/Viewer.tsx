@@ -13,13 +13,16 @@ interface Props {
   marks?: { boxes: number[][]; severity: string } | null; // PDF-space boxes of a document-check finding
   onSelect: (s: Selection | null) => void;
   onEdit: () => void;
+  marking?: boolean; // drag a box around text the OCR did not find
+  onMark?: (bbox: number[]) => void; // the box, in PDF units
   children?: (viewport: PageViewport) => React.ReactNode;
 }
 
-export default function Viewer({ pdf, pageNum, zoom, model, selection, highlights, marks, onSelect, onEdit, children }: Props) {
+export default function Viewer({ pdf, pageNum, zoom, model, selection, highlights, marks, onSelect, onEdit, marking, onMark, children }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [viewport, setViewport] = useState<PageViewport | null>(null);
   const [rendering, setRendering] = useState(true);
+  const [drag, setDrag] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,6 +65,21 @@ export default function Viewer({ pdf, pageNum, zoom, model, selection, highlight
     if (!ids.length) return null;
     return toViewRect(viewport, unionBox(model.glyphs, ids));
   }, [model, selection, viewport]);
+
+  // pointer position on the page, in viewport units (the frame may be shown scaled)
+  const at = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const k = viewport && r.width ? viewport.width / r.width : 1;
+    return { x: (e.clientX - r.left) * k, y: (e.clientY - r.top) * k };
+  };
+  const endMark = () => {
+    const d = drag;
+    setDrag(null);
+    if (!d || !viewport || Math.abs(d.x1 - d.x0) < 8 || Math.abs(d.y1 - d.y0) < 8) return;
+    const [ax, ay] = viewport.convertToPdfPoint(d.x0, d.y0);
+    const [bx, by] = viewport.convertToPdfPoint(d.x1, d.y1);
+    onMark?.([Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)]);
+  };
 
   const touch = typeof window !== "undefined" && window.matchMedia?.("(pointer: coarse)").matches;
   const handleWordClick = (w: Word, e: React.MouseEvent) => {
@@ -121,6 +139,14 @@ export default function Viewer({ pdf, pageNum, zoom, model, selection, highlight
             );
           })()}
           {children?.(viewport)}
+          {marking && (
+            <div className="mark-layer" onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => { e.preventDefault(); e.currentTarget.setPointerCapture(e.pointerId); const p = at(e); setDrag({ x0: p.x, y0: p.y, x1: p.x, y1: p.y }); }}
+              onPointerMove={(e) => { if (drag) { const p = at(e); setDrag({ ...drag, x1: p.x, y1: p.y }); } }}
+              onPointerUp={endMark} onPointerCancel={() => setDrag(null)}>
+              {drag && <div className="mark-box" style={{ left: Math.min(drag.x0, drag.x1), top: Math.min(drag.y0, drag.y1), width: Math.abs(drag.x1 - drag.x0), height: Math.abs(drag.y1 - drag.y0) }} />}
+            </div>
+          )}
         </div>
       )}
       {rendering && <div className="page-loading">Rendering…</div>}

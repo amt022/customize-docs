@@ -23,7 +23,7 @@ from .interpreter import PageModel
 from .ocr import add_text_layer, has_text_layer, mat_inverse_axis
 from .sysfonts import SysFont, coverage_fonts, has_glyph, match_font
 
-FAMILIES = {"sans": "Arial", "serif": "Times New Roman", "mono": "Courier New"}
+FAMILIES = {"sans": "Arial", "serif": "Times New Roman", "mono": "Courier New", "script": "Segoe Script"}
 
 
 def _style(name: str, bold: bool, italic: bool, serif: bool = False, mono: bool = False) -> tuple[Optional[SysFont], str]:
@@ -47,7 +47,47 @@ class Raster:
     ink: tuple[int, int, int, int]  # r0, c0, r1, c1 (exclusive) of inked pixels
 
 
-def rasterize(text: str, font: SysFont, px: float) -> Raster:
+def _sc_runs(text: str, ratio: float) -> list[tuple[str, float]]:
+    """Text as small capitals: (capitals, scale) runs. Typed in mixed case, the capitals are the tall letters;
+    typed all in capitals, the first letter of each word is."""
+    mixed = any(c.islower() for c in text)
+    runs: list[tuple[str, float]] = []
+    start = True
+    for c in text:
+        if c.isspace():
+            start, small = True, False
+        elif not c.isalpha() or "/" in text:
+            start, small = False, False
+        elif mixed:
+            small = c.islower()
+        else:
+            small, start = not start, False
+        sc = ratio if small else 1.0
+        if runs and runs[-1][1] == sc:
+            runs[-1] = (runs[-1][0] + c.upper(), sc)
+        else:
+            runs.append((c.upper(), sc))
+    return runs
+
+
+_NATIVE_SC: dict = {}
+
+
+def native_small_caps(font: SysFont) -> bool:
+    """True for typefaces whose lowercase letters are small capitals themselves (Cinzel, Cormorant SC,
+    Copperplate): no ascenders ('h' as tall as 'x') and lower than the capitals."""
+    key = (font.path, font.index)
+    if key not in _NATIVE_SC:
+        ok = False
+        if all(has_glyph(font, c) for c in "xhH"):
+            hh = [r.ink[2] - r.ink[0] for r in (rasterize(c, font, 200.0) for c in "xhH")]
+            ok = abs(hh[0] - hh[1]) <= 0.03 * hh[2] and 0.6 * hh[2] <= hh[0] <= 0.93 * hh[2]
+        _NATIVE_SC[key] = ok
+    return _NATIVE_SC[key]
+
+
+def rasterize(text: str, font: SysFont, px: float, sc: Optional[float] = None) -> Raster:
+    """sc: draw the text as small capitals, the small ones at this fraction of the capital height."""
     import freetype
     import uharfbuzz as hb
 
@@ -57,34 +97,43 @@ def rasterize(text: str, font: SysFont, px: float) -> Raster:
     upem = face_hb.upem
     hbf = hb.Font(face_hb)
     hbf.scale = (upem, upem)
-    buf = hb.Buffer()
-    buf.add_str(text)
-    buf.guess_segment_properties()
-    hb.shape(hbf, buf, {"kern": True, "liga": True})
+    shaped = []
+    runs = _sc_runs(text, sc) if sc else [(text, 1.0)]
+    if sc and native_small_caps(font):  # the typeface has its own small capitals: use them
+        runs = [("".join(part.lower() if scale < 1.0 else part for part, scale in runs), 1.0)]
+    for part, scale in runs:
+        buf = hb.Buffer()
+        buf.add_str(part)
+        buf.guess_segment_properties()
+        hb.shape(hbf, buf, {"kern": True, "liga": True})
+        shaped.append((buf, scale))
     face = freetype.Face(font.path, index=font.index)
-    size = max(int(round(px * 64)), 64)
-    face.set_char_size(size, size, 72, 72)
-    s = px / upem
     pad = int(px) + 4
-    width = int(sum(p.x_advance for p in buf.glyph_positions) * s) + 2 * pad
+    width = max(int(sum(p.x_advance * sc_ for buf, sc_ in shaped for p in buf.glyph_positions) * px / upem), 0) + 2 * pad
     height = int(px * 2) + 2 * pad
     baseline = pad + int(px * 1.2)
     canvas = np.zeros((height, width), np.float32)
     pen = float(pad)
-    for info, pos in zip(buf.glyph_infos, buf.glyph_positions):
-        face.load_glyph(info.codepoint, freetype.FT_LOAD_DEFAULT | freetype.FT_LOAD_NO_HINTING | freetype.FT_LOAD_NO_BITMAP)  # no 1-bit strikes at small sizes
-        face.glyph.render(freetype.FT_RENDER_MODE_NORMAL)
-        bm = face.glyph.bitmap
-        if bm.width and bm.rows:
-            g = np.array(bm.buffer, np.float32).reshape(bm.rows, bm.pitch)[:, : bm.width] / 255.0
-            x = int(round(pen + pos.x_offset * s)) + face.glyph.bitmap_left
-            y = baseline - int(round(pos.y_offset * s)) - face.glyph.bitmap_top
-            y0, x0 = max(y, 0), max(x, 0)
-            y1, x1 = min(y + g.shape[0], height), min(x + g.shape[1], width)
-            if y1 > y0 and x1 > x0:
-                sub = g[y0 - y:y1 - y, x0 - x:x1 - x]
-                canvas[y0:y1, x0:x1] = np.maximum(canvas[y0:y1, x0:x1], sub)
-        pen += pos.x_advance * s
+    for buf, scale in shaped:
+        size = max(int(round(px * scale * 64)), 64)
+        face.set_char_size(size, size, 72, 72)
+        s = px * scale / upem
+        for info, pos in zip(buf.glyph_infos, buf.glyph_positions):
+            face.load_glyph(info.codepoint, freetype.FT_LOAD_DEFAULT | freetype.FT_LOAD_NO_HINTING | freetype.FT_LOAD_NO_BITMAP)  # no 1-bit strikes at small sizes
+            face.glyph.render(freetype.FT_RENDER_MODE_NORMAL)
+            bm = face.glyph.bitmap
+            if bm.width and bm.rows:
+                g = np.array(bm.buffer, np.float32).reshape(bm.rows, bm.pitch)[:, : bm.width] / 255.0
+                if scale < 1.0:  # small capitals are drawn as heavy as the tall ones, not thinned by the scaling
+                    g = np.asarray(Image.fromarray((g * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3)), np.float32) / 255.0 * (1 - scale) + g * scale
+                x = int(round(pen + pos.x_offset * s)) + face.glyph.bitmap_left
+                y = baseline - int(round(pos.y_offset * s)) - face.glyph.bitmap_top
+                y0, x0 = max(y, 0), max(x, 0)
+                y1, x1 = min(y + g.shape[0], height), min(x + g.shape[1], width)
+                if y1 > y0 and x1 > x0:
+                    sub = g[y0 - y:y1 - y, x0 - x:x1 - x]
+                    canvas[y0:y1, x0:x1] = np.maximum(canvas[y0:y1, x0:x1], sub)
+            pen += pos.x_advance * s
     rows = np.nonzero(canvas.max(axis=1) > 0.15)[0]
     cols = np.nonzero(canvas.max(axis=0) > 0.15)[0]
     ink = (int(rows[0]), int(cols[0]), int(rows[-1]) + 1, int(cols[-1]) + 1) if len(rows) else (baseline, pad, baseline, pad)
@@ -363,12 +412,139 @@ def _fingerprint(mask: np.ndarray) -> np.ndarray:
     return v / (np.linalg.norm(v) + 1e-6)
 
 
+def _components(mask: np.ndarray) -> list[int]:
+    """Sizes of the connected pieces of ink (8-neighbours), largest first."""
+    if mask.shape[1] > 400:  # joined or not shows at any scale
+        step = int(np.ceil(mask.shape[1] / 400))
+        mask = mask[::step, ::step]
+    h, w = mask.shape
+    lab = np.where(mask, np.arange(1, h * w + 1, dtype=np.int32).reshape(h, w), 0)
+    for _ in range(4 * (h + w)):
+        p = np.pad(lab, 1)
+        m = lab
+        for dy in (0, 1, 2):
+            for dx in (0, 1, 2):
+                m = np.maximum(m, p[dy:dy + h, dx:dx + w])
+        m = np.where(mask, m, 0)
+        if (m == lab).all():
+            break
+        lab = m
+    return sorted(np.bincount(lab[mask]).tolist(), reverse=True) if mask.any() else []
+
+
+def _slant(mask: np.ndarray) -> float:
+    """How far the strokes lean to the right (tan of the angle): upright 0, italic about 0.25, formal scripts 0.5+.
+    The lean that, taken out again, lines the strokes up into the sharpest columns."""
+    ys, xs = np.nonzero(mask)
+    if len(ys) < 20:
+        return 0.0
+    h = mask.shape[0]
+    best, best_t = -1.0, 0.0
+    for t in np.arange(-0.2, 1.21, 0.04):
+        x = xs + (ys - h) * t
+        x -= x.min()
+        i = np.floor(x).astype(int)
+        fr = x - i
+        n = int(i.max()) + 2
+        hist = np.bincount(i, 1 - fr, n) + np.bincount(i + 1, fr, n)  # no rounding: it favours "round" leans
+        v = float((hist ** 2).sum())
+        if v > best:
+            best, best_t = v, float(t)
+    return best_t
+
+
+_DIAGONAL = set("AVWXYZKMNvwxyzk")
+
+
+def looks_cursive(mask: Optional[np.ndarray], text: str, conf: float = 100.0) -> bool:
+    """Leaning, handwriting-style lettering (the names on an invitation). Its strokes lean about twice as far as
+    an italic's (0.56+ against 0.2-0.48); a little less is enough when the OCR could hardly read the word, which
+    it can with print. Whether the letters join is no use, hairlines break up in a photo. Words made of diagonal
+    letters (WAVY) lean in any typeface, and capitals or digits alone are not written in script."""
+    tight = _tight(mask) if mask is not None else None
+    alpha = [c for c in text if c.isalpha()]
+    if tight is None or len(alpha) < 3 or tight.shape[0] < 14:  # too small to tell
+        return False
+    if not any(c.islower() for c in alpha) or sum(c in _DIAGONAL for c in alpha) >= 0.5 * len(alpha):
+        return False
+    return _slant(tight) >= (0.56 if conf >= 60 else 0.44)
+
+
+def _stroke(tight: np.ndarray) -> float:
+    """Typical stroke thickness against the height of the small letters."""
+    body = _body(tight)
+    runs = max(int((tight[:, 1:] != tight[:, :-1]).sum()) / 2, 1)
+    return float(tight.sum()) / runs / max(body[1] - body[0], 1) if body else 0.0
+
+
+def pick_script(mask: np.ndarray, old_text: str, new_text: str) -> Optional[SysFont]:
+    """The script typeface closest to a cursive word: same lean and stroke thickness first (they do not depend on
+    reading the word right, and OCR rarely reads joined-up letters right), then the letter shapes."""
+    tight = _tight(mask)
+    if tight is None:
+        return None
+    want = [c for c in new_text if not c.isspace()]
+    slant, stroke = _slant(tight), _stroke(tight)
+    ranks = rank_fonts([(mask, old_text)], False, _SCRIPT)
+    best = None
+    for i, name in enumerate(_SCRIPT):
+        f, q = _style(name, False, False)
+        if f is None or q == "similar" or not all(has_glyph(f, c) for c in want):
+            continue
+        probe = old_text if all(has_glyph(f, c) for c in old_text if not c.isspace()) else new_text
+        ct = _tight(_scan_like(rasterize(probe, f, 60.0).alpha))
+        if ct is None:
+            continue
+        shape = ranks.get((f.path, f.index), (0.0, f))[0]
+        score = shape - 1.5 * abs(_slant(ct) - slant) - 2.0 * abs(_stroke(ct) - stroke) - 0.02 * i
+        if best is None or score > best[0]:
+            best = (score, f)
+    return best[1] if best else None
+
+
+def small_caps_ratio(samples: list) -> Optional[float]:
+    """samples: (ink mask, text) per word of a line. For words set in small capitals (SHOBHAVATI with a taller S)
+    returns the height of the small letters as a fraction of the tall one, else None. Averaged over the line's
+    words, so it also works on small text where the difference is a pixel."""
+    firsts, rests, taller = [], [], 0
+    for mask, text in samples:
+        t = text.strip(".,;:")
+        if mask is None or len(t) < 3 or not (t.isalpha() and t.isupper()):
+            continue
+        rows = np.flatnonzero(mask.any(axis=1))
+        if len(rows) < 7:
+            continue
+        m = mask[rows[0]:rows[-1] + 1]
+        edges = np.flatnonzero(np.diff(np.concatenate([[0], m.any(axis=0).astype(np.int8), [0]])))
+        runs = list(zip(edges[::2], edges[1::2]))
+        if len(runs) != len(t):  # letters touch or break: cannot tell which is which
+            continue
+        hs = [m.shape[0] - int(np.argmax(m[:, a:b].any(axis=1))) for a, b in runs]
+        first, rest = float(hs[0]), float(np.median(hs[1:]))
+        firsts.append(first)
+        rests.append(rest)
+        taller += first >= max(rest + 1, 1.06 * rest)
+    n = len(firsts)
+    if not n:
+        return None
+    r = sum(rests) / sum(firsts)
+    enough = (n >= 3 and taller >= 0.7 * n) or (taller == n and r <= 0.88)
+    return r if enough and 0.6 <= r <= 0.94 else None
+
+
 _OLDSTYLE = {"Georgia", "Constantia", "Candara", "Corbel"}  # digits that sit below the line: poor for numbers
 _CANDIDATES = ["Arial", "Times New Roman", "Cambria", "Calibri", "Georgia", "Verdana", "Tahoma", "Segoe UI", "Book Antiqua",
                "Garamond", "Constantia", "Palatino Linotype", "Trebuchet MS", "Courier New", "Century Schoolbook", "Candara"]
+# capitals and small capitals of invitations, certificates and letterheads; tried when the line is set that way
+_TITLING = ["Cinzel", "Cormorant SC", "Felix Titling", "Perpetua Titling MT", "Copperplate Gothic Light", "Engravers MT"]
 
 
-_SERIF = {"Times New Roman", "Cambria", "Georgia", "Book Antiqua", "Garamond", "Constantia", "Palatino Linotype", "Century Schoolbook"}
+# joined-up lettering: free ones first (shipped with the app, so the website and every PC have them), then Office's
+_SCRIPT = ["Great Vibes", "Pinyon Script", "Alex Brush", "Allura", "Edwardian Script ITC", "Kunstler Script", "Palace Script MT",
+           "Vivaldi", "Vladimir Script", "French Script MT", "Monotype Corsiva", "Script MT Bold", "Brush Script MT",
+           "Dancing Script", "Segoe Script", "Lucida Handwriting"]
+_SERIF = {"Times New Roman", "Cambria", "Georgia", "Book Antiqua", "Garamond", "Constantia", "Palatino Linotype", "Century Schoolbook",
+          "Cinzel", "Cormorant SC", "Felix Titling", "Perpetua Titling MT", "Engravers MT"}
 _PAGE_RANKS: dict = {}  # per scan image, so every edit on a page lands on the same typeface
 
 
@@ -386,14 +562,14 @@ def _prepare(refs: list) -> list:
     return prepared
 
 
-def rank_fonts(refs: list, italic: bool = False) -> dict:
+def rank_fonts(refs: list, italic: bool = False, names: Optional[list] = None, sc: Optional[float] = None) -> dict:
     """Score every installed candidate typeface (regular weight) against text cut from the scan.
     refs: (ink mask, text) pairs. Returns {(path, index): (score, font)}."""
     prepared = _prepare(refs)
     out, seen = {}, set()
     if not prepared:
         return out
-    for name in _CANDIDATES:
+    for name in (names or _CANDIDATES):
         f, quality = _style(name, False, italic, False, False)
         if f is None or quality == "similar" or (f.path, f.index) in seen:
             continue
@@ -402,17 +578,17 @@ def rank_fonts(refs: list, italic: bool = False) -> dict:
         for fp, ar, text, n, _h in prepared:
             if not all(has_glyph(f, c) for c in text if not c.isspace()):
                 continue
-            cand = _tight(rasterize(text, f, 48.0).alpha > 0.4)
+            cand = _tight(rasterize(text, f, 48.0, sc).alpha > 0.4)
             if cand is None:
                 continue
-            sc = float(_fingerprint(cand) @ fp) - 0.8 * abs(np.log((cand.shape[1] / cand.shape[0]) / ar))
-            total, weight = total + sc * n, weight + n
+            got = float(_fingerprint(cand) @ fp) - 0.8 * abs(np.log((cand.shape[1] / cand.shape[0]) / ar))
+            total, weight = total + got * n, weight + n
         if weight:
             out[(f.path, f.index)] = (total / weight, f)
     return out
 
 
-def auto_font(local: dict, page: dict, new_text: str, bold: bool, italic: bool, heavy: bool) -> Optional[SysFont]:
+def auto_font(local: dict, page: dict, new_text: str, bold: bool, italic: bool, heavy: bool, titling: bool = False) -> Optional[SysFont]:
     """Pick from the rankings: the nearby text decides serif vs sans, the whole page decides which one,
     so edits all over one page use one consistent typeface."""
     keys = set(local) | set(page)
@@ -434,7 +610,7 @@ def auto_font(local: dict, page: dict, new_text: str, bold: bool, italic: bool, 
         return (local.get(k) or page.get(k))[0]
 
     top_local = max((k for k in ok if k in local), key=lambda k: local[k][0], default=None)
-    if top_local is not None:
+    if top_local is not None and not titling:  # (capitals alone hardly tell serif from sans: the score decides)
         serif = local[top_local][1].family in _SERIF
         same = [k for k in ok if (((local.get(k) or page.get(k))[1].family in _SERIF) == serif)]
         ok = same or ok
@@ -558,9 +734,43 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
         if beside and sum(len(b) for b in beside) >= 12:
             side_paper = np.median(np.concatenate(beside), axis=0)
     word_mask = unshear(_ink_bool(wc, side_paper), tilt) if wc is not None else None
+    depth = None  # how solid the old letters are: 1 = strokes reach the full ink colour, thin faint ones less
+    if wc is not None:
+        w3 = wc if wc.ndim == 3 else wc[..., None]
+        pp = np.median(w3.reshape(-1, w3.shape[2]), axis=0) if side_paper is None else np.atleast_1d(side_paper)
+        dist = np.linalg.norm(w3 - pp, axis=-1)
+        raw = _ink_bool(wc, side_paper)
+        if raw.sum() >= 12:
+            axis_ = np.median(w3[dist >= np.percentile(dist, 97)], axis=0) - pp
+            depth = float(np.percentile(((w3 - pp) @ axis_)[raw] / max(float(axis_ @ axis_), 1e-6), 75))
     tight = _tight(word_mask) if word_mask is not None else None
     if tight is not None and 0.5 * hpx <= tight.shape[0] <= hpx:  # the ink's own height beats the OCR box's slack
         hpx_c = float(tight.shape[0])
+    conf = min(float(w.get("conf", 100.0)) for w in sel)
+    cursive = family == "script" or (family == "auto" and looks_cursive(word_mask, old_text, conf))
+    sc = None  # small capitals: height of the small letters against the tall ones
+    if not cursive and wc is not None:
+        def line_sc(li):
+            samples = []
+            for w in words:
+                if w["line"] == li and not w.get("edited"):
+                    wr = rect_px(w["bbox"])
+                    piece = crop(wr[0], wr[1], wr[2], wr[3], 1.0)
+                    if piece is not None and piece.size:
+                        samples.append((unshear(_ink_bool(piece), tilt), w["text"]))
+            return small_caps_ratio(samples)
+
+        def line_h(li):
+            return float(np.median([rect_px(w["bbox"])[3] - rect_px(w["bbox"])[1] for w in words if w["line"] == li]))
+
+        sc = line_sc(sel[0]["line"])
+        if sc is None and old_text.replace(" ", "").isupper():  # too few clear words here: ask the lines around it
+            h0 = line_h(sel[0]["line"])
+            for li in sorted({w["line"] for w in words} - {sel[0]["line"]}, key=lambda li: abs(li - sel[0]["line"]))[:2]:
+                if 0.85 * h0 <= line_h(li) <= 1.18 * h0:
+                    sc = line_sc(li)
+                    if sc:
+                        break
     font = None
     reused = False
     prev = [w for w in words if w.get("edited") and w.get("font") and w["line"] == sel[0]["line"]]
@@ -571,7 +781,20 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
         if font is not None and not all(has_glyph(font, c) for c in (new_text or old_text) if not c.isspace()):
             font = None
         reused = font is not None
-    if font is None and family == "auto" and wc is not None:
+    if font is None and cursive and wc is not None:
+        # joined-up lettering is matched among script typefaces only (its OCR text is rarely exact, so the
+        # shapes say little more than "which script"); a plain typeface never stands in for it
+        from .sysfonts import _norm, font_index
+        scripts = {_norm(n) for n in _SCRIPT}
+        want = [c for c in (new_text or old_text) if not c.isspace()]
+        for w in words:  # a cursive word already edited on this page: both names of a card get the same typeface
+            if w.get("edited") and w.get("font"):
+                seen = next((g for g in font_index() if [g.path, g.index] == list(w["font"])), None)
+                if seen is not None and _norm(seen.family) in scripts and all(has_glyph(seen, ch) for ch in want):
+                    font = seen
+        if font is None:
+            font = pick_script(word_mask, old_text, new_text or old_text)
+    if font is None and family == "auto" and not cursive and wc is not None:
         refs = [(word_mask, old_text, 3.0)]
         by_line: dict[int, list[dict]] = {}
         for w in words:
@@ -625,10 +848,17 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
                 continue
             refs += line_refs(li, 6)
         refs = refs[:10]
-        local = rank_fonts(refs, italic)
+        # capitals only (headings of cards and certificates) or small capitals: titling typefaces are tried too
+        line_text = "".join(w["text"] for w in by_line[sel[0]["line"]])
+        titling = bool(sc) or (sum(c.isalpha() for c in line_text) >= 6 and line_text.isupper())
+        names = _CANDIDATES + _TITLING if titling else None
+        def prefer_sc(ranks):
+            return {k_: (v[0] + (0.12 if sc and native_small_caps(v[1]) else 0.0), v[1]) for k_, v in ranks.items()}
+
+        local = prefer_sc(rank_fonts(refs, italic, names, sc))
 
         import hashlib
-        pkey = (hashlib.sha1(xobj.read_raw_bytes()).hexdigest(), italic, int(hpx // 4))
+        pkey = (hashlib.sha1(xobj.read_raw_bytes()).hexdigest(), italic, int(hpx // 4), bool(sc), titling)
         if pkey not in _PAGE_RANKS:
             def same_size(li):  # only text of about this word's size says which typeface the body uses
                 hs = [rect_px(w["bbox"])[3] - rect_px(w["bbox"])[1] for w in by_line[li]]
@@ -639,18 +869,18 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
             prefs = sorted(pieces, key=lambda r: -len(r[1]))[:10]
             body = [r for r in pieces if len(r[1].split()) >= 2][:16]
             dens = [t.mean() for t in (_tight(m) for m, _t in body) if t is not None]
-            _PAGE_RANKS[pkey] = (rank_fonts(prefs, italic), float(np.median(dens)) if dens else 0.0)
+            _PAGE_RANKS[pkey] = (prefer_sc(rank_fonts(prefs, italic, names, sc)), float(np.median(dens)) if dens else 0.0)
             if len(_PAGE_RANKS) > 16:
                 _PAGE_RANKS.pop(next(iter(_PAGE_RANKS)))
         page_rank, body_density = _PAGE_RANKS[pkey]
         tm = _tight(word_mask) if word_mask is not None else None
         heavy = bool(tm is not None and body_density and tm.mean() > 1.4 * body_density and len(old_text) >= 3)
-        font = auto_font(local, page_rank, new_text or old_text, bold, italic, heavy)
+        font = auto_font(local, page_rank, new_text or old_text, bold, italic, heavy, titling)
     if font is None:
-        fam = family if family in FAMILIES else "sans"
+        fam = family if family in FAMILIES else "script" if cursive else "sans"
         font = pick_font(new_text or old_text, fam, bold, italic)
     probe_font = font if all(has_glyph(font, c) for c in old_text if not c.isspace()) else pick_font(old_text, "sans", bold, italic)
-    probe = rasterize(old_text, probe_font, 100.0)
+    probe = rasterize(old_text, probe_font, 100.0, sc)
     pr0, pc0, pr1, pc1 = probe.ink
     k = hpx_c / max(pr1 - pr0, 1)
     hx = float(np.clip(wpx / max((pc1 - pc0) * k, 1), 0.75, 1.3))
@@ -672,12 +902,12 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
         pf = f if all(has_glyph(f, c) for c in old_text if not c.isspace()) else probe_font
         kk = k
         for _ in range(3):
-            pr = rasterize(old_text, pf, 100.0 * kk)
+            pr = rasterize(old_text, pf, 100.0 * kk, sc)
             pb = _body(_scan_like(_finish_alpha(pr.alpha, 1.0, kk)))
             if not pb or pb[1] - pb[0] < 2:
                 return None
             kk *= (body_s[1] - body_s[0]) / (pb[1] - pb[0])
-        pr = rasterize(old_text, pf, 100.0 * kk)
+        pr = rasterize(old_text, pf, 100.0 * kk, sc)
         pm = _scan_like(_finish_alpha(pr.alpha, 1.0, kk))
         pb, cols = _body(pm), np.nonzero(pm.any(axis=0))[0]
         if not pb or not len(cols):
@@ -689,7 +919,7 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
         base = cy0 + body_s[1] + (pr.baseline - pb[1]) - extra - (xc - cx0) * tilt
         alh = _finish_alpha(pr.alpha, hh, kk)
         have, want = float(_scan_like(alh).sum()), float(word_mask.sum())
-        wgt = _fit_weight(alh, want) if have > 0 and 0.5 < want / have < 2.0 else 0.0
+        wgt = _fit_weight(alh, want) if have > 0 and 0.5 < want / have < 3.0 else 0.0  # (thin titling faces: up to the full pixel)
         return kk, hh, base, wgt
 
     if body_s and body_s[1] - body_s[0] >= 4:
@@ -707,9 +937,11 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
                     font, fit = bf, fb
         if fit:
             k, hx, baseline_c, weight = fit
+    if cursive:  # joined letters keep their own proportions; the old word's width (flourishes) says nothing
+        hx = 1.0
     baseline_row = baseline_c
 
-    new_raster = rasterize(new_text, font, 100.0 * k) if new_text.strip() else None
+    new_raster = rasterize(new_text, font, 100.0 * k, sc) if new_text.strip() else None
     shift_dx, shift_dy, t_rects, trailing = 0, 0, [], []
     if new_raster is not None:
         nr0, nc0, nr1, nc1 = new_raster.ink
@@ -717,6 +949,20 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
         resolved = anchor
         if anchor == "auto":
             resolved = "left"
+            own = [w for w in words if w["line"] == sel[0]["line"]]
+            if len(own) == len(sel):  # the whole line is replaced: keep it centred when the lines around it are
+                mid_, centred, flush = (ink_l + ink_r) / 2, 0, 0
+                for li in {w["line"] for w in words} - {sel[0]["line"]}:
+                    rs = [rect_px(w["bbox"]) for w in words if w["line"] == li]
+                    l0, l1 = min(r[0] for r in rs), max(r[2] for r in rs)
+                    dist = abs((min(r[1] for r in rs) + max(r[3] for r in rs)) / 2 - (or0 + or1) / 2)
+                    if dist > 8 * hpx or l1 - l0 < 2 * hpx:
+                        continue
+                    same_mid, same_left = abs((l0 + l1) / 2 - mid_) <= 0.03 * W, abs(l0 - ink_l) <= 0.01 * W
+                    centred += same_mid and abs(l0 - ink_l) > 0.03 * W
+                    flush += same_left and not same_mid
+                if centred and not flush:
+                    resolved = "center"
         # shrink text that would run over the neighbouring words (or off the scan), down to half size
         line_words = [w for w in words if w["line"] == sel[0]["line"] and w not in sel]
         gap = 0.2 * hpx
@@ -733,7 +979,8 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
             old_w = ink_r - ink_l
             need = ink_l + ink_w + max(t0 - ink_r, gap) - t0
             edge = max(rect_px(w["bbox"])[2] for w in words)
-            grow_ok = ink_w > room > 0 and need > 0 and t1 + need <= min(max(edge, t1) + 0.02 * W, 0.99 * W)
+            squeezed = need > 0.5 * max(t0 - ink_r, gap)  # under half of the old space would be left
+            grow_ok = (ink_w > room or squeezed) and room > 0 and need > 0 and t1 + need <= min(max(edge, t1) + 0.02 * W, 0.99 * W)
             if t0 - oc1 < 3 * hpx and (grow_ok or need < -0.25 * (body_s[1] - body_s[0] if body_s else hpx)):
                 shift_dx = int(round(need))
                 shift_dy = int(round(-shift_dx * tilt))
@@ -748,7 +995,7 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
             if ink_w > room:  # then make the text smaller, down to 60%
                 shrink = max(room / ink_w, 0.6)
                 k *= shrink
-                new_raster = rasterize(new_text, font, 100.0 * k)
+                new_raster = rasterize(new_text, font, 100.0 * k, sc)
                 nr0, nc0, nr1, nc1 = new_raster.ink
                 ink_w = (nc1 - nc0) * hx
             if ink_w > room * 1.02 + 2:
@@ -760,7 +1007,7 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
         if resolved == "right":
             left_ink = oc1 - ink_w
         elif resolved == "center":
-            left_ink = (oc0 + oc1) / 2 - ink_w / 2
+            left_ink = (ink_l + ink_r) / 2 - ink_w / 2
         else:
             left_ink = ink_l
         baseline_row = baseline_c - (left_ink - xc) * tilt  # the line's baseline where the new word starts
@@ -848,7 +1095,9 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
         dd = np.linalg.norm(inner - paper, axis=-1) if inner.ndim == 3 else np.abs(inner - paper[0])
         if dd.max() < 20:
             continue
-        ink_rgb = np.atleast_1d(np.median(inner[dd >= np.percentile(dd, 90)], axis=0)).astype(np.float32)
+        # thin small letters are mostly blended edge pixels: only their few darkest ones show the real colour
+        core = 97 if hpx < 40 else 90
+        ink_rgb = np.atleast_1d(np.median(inner[dd >= np.percentile(dd, core)], axis=0)).astype(np.float32)
         if draw_rgb is None:
             draw_rgb = tuple(int(v) for v in (ink_rgb if ink_rgb.size == 3 else [ink_rgb[0]] * 3))
         wm = int(0.75 * hpx)
@@ -911,6 +1160,10 @@ def edit_scan(data: bytes, page: int, ocr: dict, word_ids: list[int], new_text: 
     color = draw_rgb or _hex_rgb(sel[0].get("color", "#000000"))
     if new_raster is not None:
         al = np.clip(_reweight(_finish_alpha(new_raster.alpha, hx, k), weight), 0, 1)
+        if depth is not None and (al > 0.3).sum() >= 12:
+            # thin strokes come out of the renderer half-covered: bring them up to the old letters' solidity
+            have = float(np.percentile(al[al > 0.3], 75))
+            al = np.clip(al * float(np.clip(depth / max(have, 0.05), 1.0, 1.6)), 0, 1)
         lift = 0
         if abs(tilt) > 1e-4:
             lift = int(np.ceil(al.shape[1] * abs(tilt))) + 2

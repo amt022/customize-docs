@@ -65,7 +65,9 @@ def synthetic_ocr(src: bytes) -> dict:
             ir0, ir1, ic0, ic1 = r0 + rows[0], r0 + rows[-1] + 1, c0 + cols[0], c0 + cols[-1] + 1
             words.append({"text": t[s:i], "conf": 96.0, "line": line["id"], "color": "#000000",
                           "bbox": [ic0 / z, H - ir1 / z, ic1 / z, H - ir0 / z]})
-    return {"v": 2, "langs": "eng", "dpi": DPI, "words": words}
+    from pdfmaster.engine.ocr import OCR_VERSION
+
+    return {"v": OCR_VERSION, "langs": "eng", "dpi": DPI, "words": words}
 
 
 @pytest.fixture()
@@ -290,3 +292,132 @@ def test_shorter_word_pulls_the_whole_rest_of_the_line_left():
     assert cols[-1] < c1 - 0.4 * (c1 - c0), "TRIPATHI was not pulled left (or its old end stayed behind)"
     moved = after[:, cols[-1] - (c1 - c0) + 1:cols[-1] + 1].sum()
     assert moved >= 0.85 * before[:, c0:c1].sum(), "the moved TRIPATHI lost letters"
+
+
+# ---------------------------------------------------------------- invitation cards: script names, small capitals
+def _card(rows, size=(1100, 520)):
+    """A picture of a card as a one-page PDF (1 px = 1 pt) and its OCR words.
+    rows: (font file, px, y, [(text as drawn, text as OCR reads it, confidence)]) per centred line."""
+    from PIL import Image, ImageDraw, ImageFont
+
+    from pdfmaster.engine.ocr import OCR_VERSION
+    from pdfmaster.engine.sysfonts import BUNDLED_FONTS
+
+    W, H = size
+    im = Image.new("RGB", size, (228, 238, 244))
+    d = ImageDraw.Draw(im)
+    words = []
+    for li, (file, px, y, parts) in enumerate(rows):
+        font = ImageFont.truetype(str(BUNDLED_FONTS / file), px)
+        x = (W - d.textlength(" ".join(t for t, _o, _c in parts), font=font)) / 2
+        for drawn, read, conf in parts:
+            d.text((x, y), drawn, font=font, fill=(70, 80, 66))
+            l, t, r, b = d.textbbox((x, y), drawn, font=font)
+            words.append({"text": read, "conf": conf, "line": li, "color": "#465042", "bbox": [l, H - b, r, H - t]})
+            x += d.textlength(drawn + " ", font=font)
+    pdf = pikepdf.new()
+    img = pikepdf.Stream(pdf, im.tobytes())
+    img.Type, img.Subtype, img.Width, img.Height = pikepdf.Name.XObject, pikepdf.Name.Image, W, H
+    img.ColorSpace, img.BitsPerComponent = pikepdf.Name.DeviceRGB, 8
+    content = pdf.make_stream(f"q {W} 0 0 {H} 0 0 cm /Im0 Do Q".encode())
+    pdf.pages.append(pikepdf.Page(pikepdf.Dictionary(
+        Type=pikepdf.Name.Page, MediaBox=[0, 0, W, H], Contents=content,
+        Resources=pikepdf.Dictionary(XObject=pikepdf.Dictionary(Im0=pdf.make_indirect(img))))))
+    out = io.BytesIO()
+    pdf.save(out)
+    return out.getvalue(), {"v": OCR_VERSION, "langs": "eng", "dpi": 72, "words": words}
+
+
+_CARD = [
+    ("Cinzel.ttf", 30, 40, [("Celebrations", "CELEBRATIONS", 96.0), ("of", "OF", 96.0)]),
+    ("GreatVibes-Regular.ttf", 120, 110, [("Bikash", "CBikash", 37.0)]),  # OCR misreads the flourish
+    ("Cinzel.ttf", 30, 300, [("Lt.", "LT.", 95.0), ("Shobhavati", "SHOBHAVATI", 92.0), ("Devi", "DEVI", 90.0),
+                              ("Dayal", "DAYAL", 95.0), ("Agarwal", "AGARWAL", 96.0)]),
+]
+
+
+def test_cursive_name_is_redrawn_in_a_script_typeface_and_stays_centred():
+    """The name on an invitation ("Bikash" in joined-up script) came back as plain Trebuchet, at the left edge."""
+    from pdfmaster.engine import scanedit
+
+    data, ocr = _card(_CARD)
+    i = next(i for i, w in enumerate(ocr["words"]) if w["text"] == "CBikash")
+    old = ocr["words"][i]["bbox"]
+    res = scanedit.edit_scan(data, 0, ocr, [i], "Ashish")
+    assert any(n in res.report["font"] for n in scanedit._SCRIPT), res.report["font"]
+    assert res.report["anchor"] == "center"
+    new = res.ocr["words"][-1]["bbox"]
+    assert abs((new[0] + new[2]) / 2 - (old[0] + old[2]) / 2) < 12
+    assert "Ashish" != "CBikash" and res.ocr["words"][-1]["text"] == "Ashish"
+
+
+def test_printed_words_are_not_taken_for_script():
+    from pdfmaster.engine import scanedit as se
+
+    for name in ("Arial", "Times New Roman"):
+        for italic in (False, True):
+            f, _q = se._style(name, False, italic)
+            if f is None or f.italic != italic:
+                continue
+            for text in ("Female", "Category", "Nationality", "Wavy", "yummy", "Kumar"):
+                assert not se.looks_cursive(se._scan_like(se.rasterize(text, f, 60.0).alpha), text), (f.label, text)
+
+
+def test_small_capitals_keep_a_tall_first_letter_and_their_typeface():
+    """"Lt. Shobhavati Devi" in small capitals: OCR reads SHOBHAVATI, and the replacement came out all in
+    small letters, in another typeface, touching the next word."""
+    from pdfmaster.engine import scanedit
+
+    data, ocr = _card(_CARD)
+    scanedit._PAGE_RANKS.clear()
+    i = next(i for i, w in enumerate(ocr["words"]) if w["text"] == "SHOBHAVATI")
+    devi = ocr["words"][i + 1]
+    res = scanedit.edit_scan(data, 0, ocr, [i], "Rameshwari")
+    assert "Cinzel" in res.report["font"], res.report["font"]
+    new = res.ocr["words"][-1]["bbox"]
+    arr = render_array(res.data, 0, 1.0).astype(np.float32)
+    H = arr.shape[0]
+    crop = arr[int(H - new[3]) - 1:int(H - new[1]) + 2, int(new[0]) - 1:int(new[2]) + 2]
+    ink = scanedit._ink_bool(crop)
+    ink = ink[np.flatnonzero(ink.any(axis=1))[0]:, np.flatnonzero(ink.any(axis=0))[0]:]
+    tall = np.flatnonzero(ink[:max(int(0.1 * ink.shape[0]), 1)].any(axis=0))  # only the R reaches the top
+    assert len(tall) and tall[-1] < 0.15 * ink.shape[1], tall
+    moved = next(w for w in res.ocr["words"] if w["text"] == "DEVI")
+    gap_before, gap_after = devi["bbox"][0] - ocr["words"][i]["bbox"][2], moved["bbox"][0] - new[2]
+    assert gap_after > 0.5 * gap_before, (gap_before, gap_after)
+
+
+def test_word_the_ocr_missed_can_be_marked_by_hand_and_edited():
+    from pdfmaster.engine import ocr as ocr_engine, scanedit
+
+    data, ocr = _card(_CARD)
+    i = next(i for i, w in enumerate(ocr["words"]) if w["text"] == "CBikash")
+    true = ocr["words"].pop(i)["bbox"]  # as if the OCR never saw the name
+    loose = [true[0] - 25, true[1] - 12, true[2] + 30, true[3] + 10]
+    marked = ocr_engine.mark_word(data, 0, ocr, loose, "Bikash")
+    w = marked["words"][-1]
+    assert w["manual"] and w["text"] == "Bikash" and w["line"] not in {o["line"] for o in ocr["words"]}
+    assert all(abs(a - b) <= 4 for a, b in zip(w["bbox"], true)), (w["bbox"], true)
+    res = scanedit.edit_scan(data, 0, marked, [len(marked["words"]) - 1], "Ashish")
+    assert any(n in res.report["font"] for n in scanedit._SCRIPT), res.report["font"]
+    # a box dragged too low catches the top of the line below: the word is still measured on its own
+    below = next(o for o in ocr["words"] if o["text"] == "SHOBHAVATI")["bbox"]
+    sloppy = [true[0] - 25, below[3] - 6, true[2] + 30, true[3] + 10]
+    w2 = ocr_engine.mark_word(data, 0, ocr, sloppy, "Bikash")["words"][-1]
+    assert all(abs(a - b) <= 4 for a, b in zip(w2["bbox"], true)), (w2["bbox"], true)
+    with pytest.raises(ValueError):
+        ocr_engine.mark_word(data, 0, ocr, [20, 20, 80, 60], "x")  # empty background
+
+
+def test_mark_word_endpoint(scanned_doc):
+    client, _service, did = scanned_doc
+    m = client.get(f"/api/v1/documents/{did}/pages/1/text").json()["data"]
+    g = next(g for g in m["glyphs"] if g["c"] == "25,000")
+    b = g["b"]
+    r = client.post(f"/api/v1/documents/{did}/pages/1/ocr/words",
+                    json={"bbox": [b[0] - 3, b[1] - 3, b[2] + 3, b[3] + 3], "text": "25,000"})
+    assert r.status_code == 200, r.text
+    out = r.json()["data"]
+    assert len(out["glyphs"]) == len(m["glyphs"]) + 1 and out["glyphs"][-1]["c"] == "25,000"
+    r = client.post(f"/api/v1/documents/{did}/pages/1/ocr/words", json={"bbox": [1, 1, 30, 12], "text": "x"})
+    assert r.status_code == 422 and "No text found" in r.json()["message"]

@@ -286,3 +286,7 @@ button.link:disabled { color: var(--muted); cursor: default; }
   .edit-dock { left: 8px !important; right: 8px; transform: none !important; max-width: none; }
   .edit-dock .kbd-hint { display: none; }
 }
+
+/* marking text the OCR did not find: drag a box on the page */
+.mark-layer { position: absolute; inset: 0; z-index: 9; cursor: crosshair; touch-action: none; background: rgba(36, 89, 214, .05); }
+.mark-box { position: absolute; border: 2px dashed var(--accent); background: rgba(36, 89, 214, .14); border-radius: 3px; pointer-events: none; }

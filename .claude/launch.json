@@ -12,6 +12,12 @@
       "runtimeExecutable": "C:/ashish/editing/backend/.venv/Scripts/python.exe",
       "runtimeArgs": ["C:/ashish/editing/backend/run_hosted.py"],
       "port": 8001
+    },
+    {
+      "name": "pdfmaster-test",
+      "runtimeExecutable": "C:/ashish/editing/backend/.venv/Scripts/python.exe",
+      "runtimeArgs": ["C:/ashish/editing/backend/run_test.py"],
+      "port": 8002
     }
   ]
 }

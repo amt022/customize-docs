@@ -328,6 +328,17 @@ class DocumentService:
     def save_ocr(self, doc_id: str, data: bytes, page: int, ocr: dict) -> None:
         self.store.put(self._blob(doc_id, f"ocr/{self._page_key(data, page)}.json"), json.dumps(ocr).encode("utf-8"))
 
+    def add_ocr_word(self, doc_id: str, page: int, bbox: list[float], text: str) -> dict:
+        """A word the OCR missed, marked by the user (box + what it says); it can then be edited like any other."""
+        doc = self.get(doc_id)
+        if not 1 <= page <= doc["page_count"]:
+            raise NotFound(f"page {page}")
+        data = self.data(doc_id)
+        if self.page_model(doc_id, page)["type"] != "scanned":
+            raise ValueError("Only pages that are pictures (scans, photos) need text marked by hand")
+        self.save_ocr(doc_id, data, page, ocr_engine.mark_word(data, page - 1, self.get_ocr(doc_id, page), bbox, text))
+        return self.page_model(doc_id, page)
+
     def start_ocr(self, doc_id: str, pages: Optional[list[int]], langs: str, force: bool = False) -> dict:
         doc = self.get(doc_id)
         if ocr_engine.tesseract_path() is None:

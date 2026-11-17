@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 TESSDATA_URL = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/{lang}.traineddata"
 DEFAULT_LANGS = "eng+hin"
 LAYER_TAG = "/PMOCR"
-OCR_VERSION = 2  # bump when recognition improves so older results are offered again
+OCR_VERSION = 3  # bump when recognition improves so older results are offered again
 
 
 class OcrUnavailable(Exception):
@@ -104,24 +104,42 @@ def run_tesseract(data: bytes, index: int, data_root: Path, langs: str = DEFAULT
         # stretched grey reads better than colour on phone photos (shadows, tinted paper, light-on-dark banners)
         ImageOps.autocontrast(Image.fromarray(arr).convert("L"), cutoff=1).save(img)
         env = dict(os.environ, TESSDATA_PREFIX=str(tessdata), OMP_THREAD_LIMIT="2")
-        proc = subprocess.run([exe, str(img), "stdout", "-l", langs, "--dpi", str(dpi), "--psm", "3", "tsv"],
-                              capture_output=True, env=env, timeout=600)
-        if proc.returncode != 0:
-            raise OcrUnavailable(proc.stderr.decode("utf-8", "replace")[-400:])
-        tsv = proc.stdout.decode("utf-8", "replace")
-        if not tsv.startswith("level"):
-            raise OcrUnavailable("Tesseract did not return word positions: " + proc.stderr.decode("utf-8", "replace")[-300:])
+        def run(psm: str) -> str:
+            proc = subprocess.run([exe, str(img), "stdout", "-l", langs, "--dpi", str(dpi), "--psm", psm, "tsv"],
+                                  capture_output=True, env=env, timeout=600)
+            if proc.returncode != 0:
+                raise OcrUnavailable(proc.stderr.decode("utf-8", "replace")[-400:])
+            out = proc.stdout.decode("utf-8", "replace")
+            if not out.startswith("level"):
+                raise OcrUnavailable("Tesseract did not return word positions: " + proc.stderr.decode("utf-8", "replace")[-300:])
+            return out
+
+        tsv = run("3")
+        try:  # a second look for scattered words: the layout pass skips short lines standing alone on a picture
+            sparse = run("11")
+        except (OcrUnavailable, subprocess.TimeoutExpired):
+            sparse = ""
+
+    def rows(out: str):
+        for row in csv.DictReader(io.StringIO(out), delimiter="\t", quoting=csv.QUOTE_NONE):
+            text = (row.get("text") or "").strip()
+            conf = float(row.get("conf") or -1)
+            if row.get("level") == "5" and text and conf >= 0:
+                yield row, text, conf, tuple(int(row[k]) for k in ("left", "top", "width", "height"))
+
+    found = [r + (0,) for r in rows(tsv)]
+    boxes = [b for _r, _t, _c, b, _p in found]
+    for row, text, conf, (l, t, w, h) in rows(sparse):
+        # only sure, real words (pictures give this pass plenty of noise) where the first pass found nothing
+        if conf < 85 or sum(c.isalnum() for c in text) < 2:
+            continue
+        if any(l < bl + bw and bl < l + w and t < bt + bh and bt < t + h for bl, bt, bw, bh in boxes):
+            continue
+        found.append((row, text, conf, (l, t, w, h), 1))
 
     gray = arr.mean(axis=2)
     words, lines = [], {}
-    for row in csv.DictReader(io.StringIO(tsv), delimiter="\t", quoting=csv.QUOTE_NONE):
-        if row.get("level") != "5":
-            continue
-        text = (row.get("text") or "").strip()
-        conf = float(row.get("conf") or -1)
-        if not text or conf < 0:
-            continue
-        l, t, w, h = (int(row[k]) for k in ("left", "top", "width", "height"))
+    for row, text, conf, (l, t, w, h), source in found:
         (ax, ay), (bx, by) = geo.to_pdf(l, t), geo.to_pdf(l + w, t + h)
         patch = arr[t:t + h, l:l + w].reshape(-1, 3)
         g = gray[t:t + h, l:l + w].reshape(-1)
@@ -130,7 +148,7 @@ def run_tesseract(data: bytes, index: int, data_root: Path, langs: str = DEFAULT
             dark = patch[g <= np.percentile(g, 15)]
             if len(dark):
                 color = "#%02x%02x%02x" % tuple(int(v) for v in np.median(dark, axis=0))
-        key = (row["block_num"], row["par_num"], row["line_num"])
+        key = (source, row["block_num"], row["par_num"], row["line_num"])
         lid = lines.setdefault(key, len(lines))
         words.append({
             "text": text, "conf": round(conf, 1), "line": lid,
@@ -138,6 +156,83 @@ def run_tesseract(data: bytes, index: int, data_root: Path, langs: str = DEFAULT
             "color": color,
         })
     return {"v": OCR_VERSION, "langs": langs, "dpi": dpi, "words": words}
+
+
+def _bands(profile: np.ndarray, min_gap: int) -> list[tuple[int, int]]:
+    """Runs of non-empty entries, joined across gaps shorter than min_gap."""
+    idx = np.flatnonzero(profile > 0)
+    if not len(idx):
+        return []
+    out = [[int(idx[0]), int(idx[0]) + 1]]
+    for i in idx[1:]:
+        if i - out[-1][1] < min_gap:
+            out[-1][1] = int(i) + 1
+        else:
+            out.append([int(i), int(i) + 1])
+    return [tuple(b) for b in out]
+
+
+def _main_band(ink: np.ndarray) -> np.ndarray:
+    """A hand-drawn box often catches the edge of the line above or below, or of the next word: keep the
+    band of rows holding most of the ink, then drop separate pieces touching the box's left or right side."""
+    rows = ink.sum(axis=1)
+    bands = _bands(rows, 2)
+    if len(bands) > 1:
+        r0, r1 = max(bands, key=lambda b: rows[b[0]:b[1]].sum())
+        out = np.zeros_like(ink)
+        out[r0:r1] = ink[r0:r1]
+        ink = out
+    h = max(int(np.ptp(np.flatnonzero(ink.any(axis=1)))) + 1, 1) if ink.any() else 1
+    cols = ink.sum(axis=0)
+    cb = _bands(cols, max(int(0.25 * h), 2))
+    if len(cb) > 1:
+        keep = np.zeros(ink.shape[1], bool)
+        for k, (c0, c1) in enumerate(cb):
+            at_edge = (k == 0 and c0 <= 1) or (k == len(cb) - 1 and c1 >= ink.shape[1] - 1)
+            if not at_edge or cols[c0:c1].sum() >= 0.5 * cols.sum():
+                keep[c0:c1] = True
+        ink = ink & keep[None, :]
+    return ink
+
+
+def mark_word(data: bytes, index: int, ocr: Optional[dict], bbox: list[float], text: str, dpi: int = 300) -> dict:
+    """Add a word the OCR did not find (joined-up script, text over a picture): the user drew `bbox` (PDF units)
+    around it and typed what it says. The box is tightened to the ink inside it. Returns the new OCR result."""
+    from .scanedit import _ink_bool
+
+    zoom = dpi / 72.0
+    arr = render_array(data, index, zoom)
+    with pikepdf.open(io.BytesIO(data)) as pdf:
+        geo = geometry_for(pdf.pages[index], zoom)
+    c0, r0, c1, r1 = geo.rect_to_px(bbox)
+    c0, r0 = max(int(c0), 0), max(int(r0), 0)
+    c1, r1 = min(int(np.ceil(c1)), arr.shape[1]), min(int(np.ceil(r1)), arr.shape[0])
+    if c1 - c0 < 4 or r1 - r0 < 4:
+        raise ValueError("The box is too small")
+    crop = arr[r0:r1, c0:c1].astype(np.float32)
+    # the paper is what the edge of the box shows; the text is what differs from it
+    edge = np.concatenate([crop[0], crop[-1], crop[:, 0], crop[:, -1]])
+    ink = _ink_bool(crop, np.median(edge, axis=0))
+    ink = _main_band(ink)
+    rows_, cols_ = np.flatnonzero(ink.any(axis=1)), np.flatnonzero(ink.any(axis=0))
+    if ink.sum() < 12 or not len(rows_):
+        raise ValueError("No text found inside the box. Draw it closely around the word.")
+    l, t, r, b = c0 + int(cols_[0]), r0 + int(rows_[0]), c0 + int(cols_[-1]) + 1, r0 + int(rows_[-1]) + 1
+    color = "#%02x%02x%02x" % tuple(int(v) for v in np.median(crop[ink], axis=0))
+    (ax, ay), (bx, by) = geo.to_pdf(l, t), geo.to_pdf(r, b)
+    box = [round(min(ax, bx), 2), round(min(ay, by), 2), round(max(ax, bx), 2), round(max(ay, by), 2)]
+    words = list((ocr or {}).get("words", []))
+    # joins a line it sits on (same height, overlapping rows), so the words after it can be selected with it
+    line, h = max([w["line"] for w in words], default=-1) + 1, box[3] - box[1]
+    for w in words:
+        wb = w["bbox"]
+        over = min(wb[3], box[3]) - max(wb[1], box[1])
+        if over > 0.6 * min(h, wb[3] - wb[1]) and 0.7 * h <= wb[3] - wb[1] <= 1.4 * h:
+            line = w["line"]
+            break
+    words.append({"text": text.strip(), "conf": 0.0, "line": line, "bbox": box, "color": color, "manual": True})
+    base = ocr or {"langs": DEFAULT_LANGS, "dpi": dpi}
+    return {**base, "v": OCR_VERSION, "words": words}
 
 
 def ocr_page_model(page_index: int, box, rotation: int, ocr: dict) -> dict:

@@ -6,6 +6,7 @@ __pycache__/
 web/node_modules/
 web/dist/
 backend/data-hosted/
+backend/data-test/
 backend/build/
 backend/dist/
 desktop/node_modules/

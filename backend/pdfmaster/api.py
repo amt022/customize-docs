@@ -510,6 +510,21 @@ def start_ocr(doc_id: str, body: OcrIn):
     return ok(service.start_ocr(doc_id, body.pages, body.langs, body.force), "OCR started", 202)
 
 
+class MarkWordIn(BaseModel):
+    bbox: list[float] = Field(min_length=4, max_length=4)  # PDF units, as in the page model
+    text: str = Field(min_length=1, max_length=200)
+
+
+@app.post(f"{API}/documents/{{doc_id}}/pages/{{page}}/ocr/words")
+def mark_word(doc_id: str, page: int, body: MarkWordIn):
+    if not body.text.strip():
+        raise HTTPException(422, "Type the text that is inside the box")
+    try:
+        return ok(service.add_ocr_word(doc_id, page, body.bbox, body.text), "Text marked")
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+
+
 @app.get(f"{API}/jobs/{{job_id}}")
 def job(job_id: str):
     return ok(service.job(job_id))

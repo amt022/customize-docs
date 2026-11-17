@@ -69,6 +69,8 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
   const [pendingNote, setPendingNote] = useState<{ x: number; y: number } | null>(null);
   const [annotations, setAnnotations] = useState<AnnotationInfo[]>([]);
   const [ocrJob, setOcrJob] = useState<{ id: string; progress: number } | null>(null);
+  const [marking, setMarking] = useState(false);  // dragging a box around text the OCR missed
+  const [markBox, setMarkBox] = useState<number[] | null>(null);
   const previewAbort = useRef<AbortController | null>(null);
   const previewTimer = useRef<number | undefined>(undefined);
   const insertInput = useRef<HTMLInputElement>(null);
@@ -331,6 +333,30 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
   };
 
   // ------------------------------------------------------------------ OCR
+  // text the OCR could not find (joined-up names, words over a picture): the user's box + what it says
+  // becomes a normal word, selected and ready to be typed over
+  const addMarked = async (text: string) => {
+    if (!markBox) return;
+    setBusy(true);
+    try {
+      const m = await api.markWord(id, page, markBox, text.trim());
+      setModel(m);
+      setMarkBox(null);
+      setMarking(false);
+      const gi = m.glyphs.length - 1;
+      const li = m.lines.findIndex((l) => l.map.includes(gi));
+      if (li >= 0) {
+        setSelection({ page, line: li, start: m.lines[li].map.indexOf(gi), end: m.lines[li].map.lastIndexOf(gi) + 1 });
+        setEditing(true);
+      }
+      notify("ok", "Word added. Now type the new text.");
+    } catch (e) {
+      notify("err", (e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const runOcr = async () => {
     try {
       const job = await api.startOcr(id, [page]);
@@ -487,7 +513,12 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
               <strong>Scanned page.</strong>{" "}
               {model.ocrAvailable ? (
                 ocrJob ? <>Recognising text… {Math.round(ocrJob.progress * 100)}%</>
-                  : <>Recognise the text (English + Hindi) to edit words on this page. <button className="btn small primary" onClick={runOcr}>Recognise text</button></>
+                  : <>Recognise the text (English + Hindi) to edit words on this page. <button className="btn small primary" onClick={runOcr}>Recognise text</button>
+                    <button className={"btn small" + (marking ? " primary" : "")} disabled={busy}
+                onClick={() => { setMarking(!marking); setSelection(null); setEditing(false); setTool("edit"); }}>
+                {marking ? "Cancel marking" : "Word not clickable? Mark it"}
+              </button>
+              {marking && <span className="muted"> Drag a box closely around the word (one word or one line), then type what it says.</span>}</>
               ) : (
                 <>Editing scanned text needs the Tesseract OCR engine, which isn't installed. Install it once (e.g. <code>winget install UB-Mannheim.TesseractOCR</code>), then reopen this page.</>
               )}
@@ -507,6 +538,11 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
               {model?.ocr?.meanConfidence != null && <> (confidence {model.ocr.meanConfidence}%)</>}. Click a word to edit it, Shift+click to select several words (e.g. a whole phone number); the scan is patched to match.
               <span className="forgery-note"> Only correct documents that are yours to change: altering certificates, marksheets or ID cards is forgery and a crime.</span>
               <button className="btn small" onClick={() => act((v) => api.textLayer(id, v), "PDF is now searchable")}>Make searchable</button>
+              <button className={"btn small" + (marking ? " primary" : "")} disabled={busy}
+                onClick={() => { setMarking(!marking); setSelection(null); setEditing(false); setTool("edit"); }}>
+                {marking ? "Cancel marking" : "Word not clickable? Mark it"}
+              </button>
+              {marking && <span className="muted"> Drag a box closely around the word (one word or one line), then type what it says.</span>}
             </div>
           )}
           {view === "edit" && (
@@ -515,6 +551,7 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
               marks={checkOpen && issue && issue.page === page ? { boxes: issue.boxes, severity: issue.severity } : null}
               onSelect={(s) => { setSelection(s); setEditing(false); setPreview(null); setPreviewError(null); }}
               onEdit={() => setEditing(true)}
+              marking={marking && tool === "edit" && model?.type === "scanned"} onMark={setMarkBox}
             >
               {(vp) => (
                 <>
@@ -586,6 +623,12 @@ export default function Editor({ id, startTool = "edit", startAction, onClose }:
         />
         )}
       </div>
+
+      {markBox && (
+        <PromptDialog title="What does this text say?" label="Text inside your box, as printed now" initial="" confirm="Add word"
+          hint="For example the name. It becomes a word you can click and change, drawn in the same lettering."
+          onOk={(v) => addMarked(v)} onClose={() => setMarkBox(null)} />
+      )}
 
       <footer className="statusbar">
         <div className="pager">

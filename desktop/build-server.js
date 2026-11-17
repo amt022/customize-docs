@@ -13,6 +13,8 @@ run([
   "--paths", backend,
   "--collect-all", "pikepdf", "--collect-all", "pypdfium2", "--collect-all", "pypdfium2_raw",
   "--collect-all", "numpy", "--collect-all", "uharfbuzz", "--collect-all", "freetype", "--collect-data", "fontTools",
+  // free script / small-capital fonts used to redraw cursive names and titling text in scans
+  "--add-data", `${path.join(backend, "pdfmaster", "fonts")}${path.delimiter}pdfmaster/fonts`,
   "--hidden-import", "uvicorn.logging", "--hidden-import", "uvicorn.loops.auto",
   "--hidden-import", "uvicorn.protocols.http.auto", "--hidden-import", "uvicorn.lifespan.on",
   path.join(backend, "pdfmaster", "__main__.py"),

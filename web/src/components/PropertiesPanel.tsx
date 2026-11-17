@@ -87,9 +87,9 @@ export default function PropertiesPanel({ doc, model, selection, anchor, fit, la
           <h3>Scanned text style</h3>
           <p className="help">New words are drawn into the scan. Auto match picks the closest typeface from your scan; size, tilt, ink colour and baseline are matched too.</p>
           <div className="segmented">
-            {(["auto", "sans", "serif", "mono"] as const).map((f) => (
+            {(["auto", "sans", "serif", "mono", "script"] as const).map((f) => (
               <button key={f} className={scanStyle.family === f ? "on" : ""} onClick={() => onScanStyle({ ...scanStyle, family: f })}>
-                {f === "auto" ? "Auto match" : f === "sans" ? "Sans" : f === "serif" ? "Serif" : "Mono"}
+                {f === "auto" ? "Auto match" : f === "sans" ? "Sans" : f === "serif" ? "Serif" : f === "mono" ? "Mono" : "Cursive"}
               </button>
             ))}
           </div>

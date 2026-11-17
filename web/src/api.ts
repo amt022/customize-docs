@@ -176,6 +176,9 @@ export const api = {
   ocrStatus: () => call<{ available: boolean; languages: string[] }>("/ocr/status"),
   startOcr: (id: string, pages?: number[], langs = "eng+hin") => call<JobInfo>(`/documents/${id}/ocr`, json({ pages, langs })),
   job: (jobId: string) => call<JobInfo>(`/jobs/${jobId}`),
+  // a word the OCR missed: box in PDF units + what it says; returns the page with the word added (last glyph)
+  markWord: (id: string, page: number, bbox: number[], text: string) =>
+    call<PageModel>(`/documents/${id}/pages/${page}/ocr/words`, json({ bbox, text })),
   outlinesToScan: (id: string, baseVersion: number) =>
     call<DocumentInfo & { pages: number[] }>(`/documents/${id}/outlines-to-scan`, json({ baseVersion })),
   textLayer: (id: string, baseVersion: number) => call<DocumentInfo>(`/documents/${id}/ocr/text-layer`, json({ baseVersion })),

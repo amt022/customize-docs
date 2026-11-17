@@ -24,6 +24,11 @@ from .cmap import build_tounicode
 log = logging.getLogger(__name__)
 
 
+BUNDLED_FONTS = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1])) / "fonts"
+if not BUNDLED_FONTS.is_dir():  # PyInstaller keeps package data under pdfmaster/
+    BUNDLED_FONTS = Path(getattr(sys, "_MEIPASS", "")) / "pdfmaster" / "fonts"
+
+
 def _font_dirs() -> list[Path]:
     dirs = []
     if sys.platform == "win32":
@@ -36,6 +41,7 @@ def _font_dirs() -> list[Path]:
         dirs += [Path("/System/Library/Fonts"), Path("/Library/Fonts"), Path.home() / "Library/Fonts"]
     else:
         dirs += [Path("/usr/share/fonts"), Path("/usr/local/share/fonts"), Path.home() / ".fonts"]
+    dirs.append(BUNDLED_FONTS)  # free script / small-capital faces shipped with the app (same result on every machine)
     extra = os.environ.get("PDFMASTER_FONT_DIRS")
     if extra:
         dirs += [Path(p) for p in extra.split(os.pathsep)]

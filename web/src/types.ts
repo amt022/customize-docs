@@ -97,7 +97,7 @@ export interface Placement {
 }
 
 export interface ScanStyle {
-  family: "auto" | "sans" | "serif" | "mono";
+  family: "auto" | "sans" | "serif" | "mono" | "script";
   bold: boolean;
 }
 
