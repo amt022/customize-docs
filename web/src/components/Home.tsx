@@ -15,9 +15,10 @@ const Creative = lazy(() => import("./Creative"));
 const ImageEditor = lazy(() => import("./ImageEditor"));
 const Tools = lazy(() => import("./Tools"));
 const Resume = lazy(() => import("./Resume"));
+const Scanner = lazy(() => import("./Scanner"));
 const loading = <main className="home-main"><p className="muted" role="status">Loading…</p></main>;
 
-type Tab = "home" | "photo" | "pdf" | "checklist" | "creative" | "resume" | "tools";
+type Tab = "home" | "photo" | "scan" | "pdf" | "checklist" | "creative" | "resume" | "tools";
 /** Which hub quick tool a PDF picker was opened for. */
 type Quick = "edit" | "images" | "compress" | "split" | "tojpg" | "merge";
 
@@ -37,7 +38,7 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
   useLang();
   const [tab, setTab] = useState<Tab>(() => {
     const t = sessionStorage.getItem("homeTab");
-    return t === "photo" || t === "pdf" || t === "checklist" || t === "creative" || t === "resume" || t === "tools" ? t : "home";
+    return t === "photo" || t === "scan" || t === "pdf" || t === "checklist" || t === "creative" || t === "resume" || t === "tools" ? t : "home";
   });
   const go = (id: Tab) => {
     setTab(id);
@@ -174,6 +175,7 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
 
   const QUICK: [icon: string, name: string, hint: string, run: () => void][] = [
     ["🗜", "Compress PDF", "Under 100 KB, 200 KB, 500 KB…", () => pickPdf("compress")],
+    ["📷", "Scan to PDF", "Phone photo → clean, straight PDF", () => go("scan")],
     ["🖼", "JPG to PDF", "Photos or scans into one PDF", () => pictures.current?.click()],
     ["➕", "Merge PDFs", "Join several files into one", () => pickPdf("merge")],
     ["✂", "Split PDF", "Take out the pages you need", () => pickPdf("split")],
@@ -212,7 +214,7 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
       <header className="home-head">
         <button className="brand brand-link" onClick={() => go("home")}><Logo size={34} /> <span className="wordmark">Form<b>Easy</b></span></button>
         <nav className="home-tabs" role="tablist">
-          {([["home", "🏠 Home"], ["photo", "🪪 Photo & Signature"], ["pdf", "📄 PDF Studio"], ["checklist", "📋 Checklist"], ["creative", "🎨 Creative Studio"], ["resume", "💼 Resume"], ["tools", "🧰 Tools"]] as const).map(([id, label]) => (
+          {([["home", "🏠 Home"], ["photo", "🪪 Photo & Signature"], ["scan", "📷 Scan"], ["pdf", "📄 PDF Studio"], ["checklist", "📋 Checklist"], ["creative", "🎨 Creative Studio"], ["resume", "💼 Resume"], ["tools", "🧰 Tools"]] as const).map(([id, label]) => (
             <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => go(id)}>{t(label)}</button>
           ))}
         </nav>
@@ -236,6 +238,12 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
               <span className="hub-icon">🪪</span>
               <strong>{t("Photo & Signature")}</strong>
               <span className="muted small">{t("Resize and crop to exact dimensions, set a file size in KB, convert format, remove the background and check against the limits.")}</span>
+              <span className="hub-go">{t("Open")} <i>→</i></span>
+            </button>
+            <button className="hub-card sc-card" onClick={() => go("scan")}>
+              <span className="hub-icon">📷</span>
+              <strong>{t("Document Scanner")}</strong>
+              <span className="muted small">{t("Photograph marksheets and certificates with your phone: edges found, page straightened, shadows removed. Save as PDF, JPG, PNG or Word under the KB limit.")}</span>
               <span className="hub-go">{t("Open")} <i>→</i></span>
             </button>
             <button className="hub-card" onClick={() => go("pdf")}>
@@ -307,10 +315,10 @@ export default function Home({ onOpen }: { onOpen: (id: string, tool?: "edit" | 
         <>
           <Checklist group={group} onGroup={chooseGroup}
             onPhoto={(name) => { setPhotoPreset({ name, n: Date.now() }); go("photo"); }}
-            onCompress={() => pickPdf("compress")} onScan={() => pictures.current?.click()} />
+            onCompress={() => pickPdf("compress")} onScan={() => go("scan")} />
           <div className="home-main" style={{ marginTop: 0 }}>{feedback}</div>
         </>
-      ) : tab === "creative" ? <Suspense fallback={loading}><Creative /></Suspense> : tab === "resume" ? <Suspense fallback={loading}><Resume /></Suspense> : tab === "tools" ? <Suspense fallback={loading}><Tools /></Suspense> : tab === "photo" ? <main className="home-wide"><Suspense fallback={loading}><ImageEditor key={photoPreset?.n} preset={photoPreset?.name} /></Suspense></main> : (
+      ) : tab === "creative" ? <Suspense fallback={loading}><Creative /></Suspense> : tab === "resume" ? <Suspense fallback={loading}><Resume /></Suspense> : tab === "tools" ? <Suspense fallback={loading}><Tools /></Suspense> : tab === "scan" ? <Suspense fallback={loading}><Scanner onOpen={(id) => onOpen(id)} /></Suspense> : tab === "photo" ? <main className="home-wide"><Suspense fallback={loading}><ImageEditor key={photoPreset?.n} preset={photoPreset?.name} /></Suspense></main> : (
       <main className="home-main">
         <h1>{t("Edit PDF text exactly where it is")}</h1>
         <p className="lede">{t("Change a word, a figure or a name. The original font, size, colour and position are kept, and every edit is checked against the original page.")}</p>

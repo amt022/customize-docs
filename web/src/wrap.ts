@@ -13,14 +13,28 @@ function concat(parts: (Uint8Array | string)[]): Uint8Array {
 /** One page exactly the picture's size (96 px per inch), the JPEG stored as-is (DCTDecode). */
 export function jpegToPdf(jpeg: Uint8Array, width: number, height: number, pagePt?: [number, number]): Blob {
   const w = +(pagePt ? pagePt[0] : width * 0.75).toFixed(2), h = +(pagePt ? pagePt[1] : height * 0.75).toFixed(2);
-  const content = `q ${w} 0 0 ${h} 0 0 cm /Im0 Do Q`;
+  return jpegsToPdf([{ jpeg, width, height, page: [w, h], box: [0, 0, w, h] }]);
+}
+
+export type PdfPicturePage = { jpeg: Uint8Array; width: number; height: number; page: [number, number]; box: [number, number, number, number] };
+
+/** Several pages, one JPEG each, placed in `box` (x, y, w, h in points from the bottom-left) on a white page. */
+export function jpegsToPdf(pages: PdfPicturePage[]): Blob {
+  const n = pages.length;
   const objs: (Uint8Array | string)[][] = [
     ["<< /Type /Catalog /Pages 2 0 R >>"],
-    ["<< /Type /Pages /Kids [3 0 R] /Count 1 >>"],
-    [`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${w} ${h}] /Resources << /XObject << /Im0 4 0 R >> >> /Contents 5 0 R >>`],
-    [`<< /Type /XObject /Subtype /Image /Width ${width} /Height ${height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpeg.length} >>\nstream\n`, jpeg, "\nendstream"],
-    [`<< /Length ${content.length} >>\nstream\n${content}\nendstream`],
+    [`<< /Type /Pages /Kids [${pages.map((_, i) => `${3 + i * 3} 0 R`).join(" ")}] /Count ${n} >>`],
   ];
+  pages.forEach((p, i) => {
+    const o = 3 + i * 3;
+    const [pw, ph] = p.page, [bx, by, bw, bh] = p.box;
+    const content = `q ${bw} 0 0 ${bh} ${bx} ${by} cm /Im0 Do Q`;
+    objs.push(
+      [`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${pw} ${ph}] /Resources << /XObject << /Im0 ${o + 1} 0 R >> >> /Contents ${o + 2} 0 R >>`],
+      [`<< /Type /XObject /Subtype /Image /Width ${p.width} /Height ${p.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${p.jpeg.length} >>\nstream\n`, p.jpeg, "\nendstream"],
+      [`<< /Length ${content.length} >>\nstream\n${content}\nendstream`],
+    );
+  });
   const parts: (Uint8Array | string)[] = ["%PDF-1.4\n%\xE2\xE3\xCF\xD3\n"];
   const offsets: number[] = [];
   let pos = concat(parts).length;
@@ -79,6 +93,52 @@ export function zip(files: { name: string; data: Uint8Array | string }[]): Uint8
   e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
   e.setUint32(12, cd.length, true); e.setUint32(16, offset, true);
   return concat([...local, cd, new Uint8Array(e.buffer)]);
+}
+
+/**
+ * A Word document with one picture per page, each fitted inside the margins of a `pagePt` page
+ * (width, height in points). Used by the document scanner.
+ */
+export function jpegsToDocx(pics: { jpeg: Uint8Array; width: number; height: number }[], pagePt: [number, number] = [595.28, 841.89]): Blob {
+  const EMU = 12700; // per point
+  const margin = 36; // 0.5 in
+  const X = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+  const [pw, ph] = pagePt;
+  const availW = pw - 2 * margin, availH = (ph - 2 * margin) * 0.97;
+  const body = pics.map((p, i) => {
+    const s = Math.min(availW / p.width, availH / p.height);
+    const cx = Math.round(p.width * s * EMU), cy = Math.round(p.height * s * EMU);
+    const brk = i ? '<w:r><w:br w:type="page"/></w:r>' : "";
+    return `<w:p><w:pPr><w:spacing w:before="0" w:after="0"/><w:jc w:val="center"/></w:pPr>${brk}<w:r><w:drawing><wp:inline><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${i + 1}" name="Page ${i + 1}"/>`
+      + '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>'
+      + `<pic:nvPicPr><pic:cNvPr id="${i + 1}" name="page${i + 1}.jpg"/><pic:cNvPicPr/></pic:nvPicPr>`
+      + `<pic:blipFill><a:blip r:embed="img${i + 1}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
+      + `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>`
+      + "</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>";
+  }).join("");
+  const tw = (pt: number) => Math.round(pt * 20);
+  const doc = X + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+    + 'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" '
+    + 'xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" '
+    + 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+    + 'xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>'
+    + body
+    + `<w:sectPr><w:pgSz w:w="${tw(pw)}" w:h="${tw(ph)}"${pw > ph ? ' w:orient="landscape"' : ""}/><w:pgMar w:top="${tw(margin)}" w:right="${tw(margin)}" w:bottom="${tw(margin)}" w:left="${tw(margin)}" w:header="0" w:footer="0" w:gutter="0"/></w:sectPr>`
+    + "</w:body></w:document>";
+  const data = zip([
+    { name: "[Content_Types].xml", data: X + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+      + '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+      + '<Default Extension="xml" ContentType="application/xml"/><Default Extension="jpg" ContentType="image/jpeg"/>'
+      + '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>' },
+    { name: "_rels/.rels", data: X + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
+    { name: "word/_rels/document.xml.rels", data: X + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+      + pics.map((_, i) => `<Relationship Id="img${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/page${i + 1}.jpg"/>`).join("")
+      + "</Relationships>" },
+    { name: "word/document.xml", data: doc },
+    ...pics.map((p, i) => ({ name: `word/media/page${i + 1}.jpg`, data: p.jpeg })),
+  ]);
+  return new Blob([data], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
 }
 
 /** A Word document holding the picture at its natural size (96 px per inch), at most the text width. */
